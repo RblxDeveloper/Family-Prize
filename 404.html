@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskQuest</title>
+</head>
+<body>
+    <script>
+        // GitHub Pages SPA redirect hack
+        // When a user navigates directly to a route like /testing12/child-dashboard.html,
+        // GitHub Pages serves this 404.html file. We redirect to index.html which then
+        // handles the routing via JavaScript.
+        
+        const path = window.location.pathname
+        const repo = '/testing12' // Change this to your repo name if different
+        
+        // Extract the attempted page and redirect to index with it as a query param
+        // Then index.html can use the auth system to navigate
+        window.location.replace(repo + '/index.html')
+    </script>
+</body>
+</html>

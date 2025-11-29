@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - TaskQuest</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo-icon">⭐</span>
+            <span>TaskQuest</span>
+        </div>
+        <div class="nav-links">
+            <a href="parent-dashboard.html" class="nav-link">Parent Dashboard</a>
+            <a href="child-dashboard.html" class="nav-link">Child Dashboard</a>
+        </div>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </nav>
+
+    <main class="dashboard-container">
+        <section class="dashboard-section">
+            <h2 class="section-title">Welcome to TaskQuest! 🌟</h2>
+            <div class="dashboard-content" style="text-align: center; padding: 48px;">
+                <p style="font-size: 18px; margin-bottom: 24px;">Choose your dashboard:</p>
+                <div style="display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;">
+                    <a href="parent-dashboard.html" class="primary-btn" style="text-decoration: none; display: inline-block; padding: 20px 40px; font-size: 18px;">
+                        👨‍👩‍👧‍👦 Parent Dashboard
+                    </a>
+                    <a href="child-dashboard.html" class="secondary-btn" style="text-decoration: none; display: inline-block; padding: 20px 40px; font-size: 18px;">
+                        🎮 Child Dashboard
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <!-- Firebase Authentication -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <!-- Firebase Firestore -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <!-- Firebase Storage -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+    <script src="scripts/main.js"></script>
+</body>
+</html>

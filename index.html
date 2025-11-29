@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskQuest - Login</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="login-page">
+    <script>
+        // Safe shim so inline onclick doesn't throw if main.js failed to load.
+        // This will be overridden by the real function in `scripts/main.js` when it loads.
+        if (typeof window.showLoginForm !== 'function') {
+            window.showLoginForm = function(type) {
+                const modal = document.getElementById('loginModal')
+                const formTitle = document.getElementById('formTitle')
+                if (formTitle) formTitle.textContent = type === 'child' ? 'Child Login' : 'Parent Login'
+                if (modal) modal.style.display = 'block'
+            }
+        }
+    </script>
+    <script>
+        // Shim for closeLoginModal to avoid clickable errors if main.js not loaded yet
+        if (typeof window.closeLoginModal !== 'function') {
+            window.closeLoginModal = function() {
+                const modal = document.getElementById('loginModal')
+                if (modal) {
+                    modal.style.display = 'none'
+                    const form = document.getElementById('loginForm')
+                    if (form) form.reset()
+                }
+            }
+        }
+    </script>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo-section">
+                <div class="logo-icon">⭐</div>
+                <h1>TaskQuest</h1>
+                <p class="tagline">Complete tasks, earn rewards!</p>
+            </div>
+
+            <div class="login-options">
+                <button class="login-btn child-login" onclick="showLoginForm('child')">
+                    <span class="btn-icon">🎮</span>
+                    <span class="btn-text">Child Login</span>
+                </button>
+                <button class="login-btn parent-login" onclick="showLoginForm('parent')">
+                    <span class="btn-icon">👨‍👩‍👧‍👦</span>
+                    <span class="btn-text">Parent Login</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Login Form Modal -->
+        <div id="loginModal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="closeLoginModal()">&times;</span>
+                <h2 id="formTitle">Login</h2>
+                <form id="loginForm" onsubmit="handleFormSubmit(event); return false;">
+                    <div class="form-group" id="nameGroup" style="display: none;">
+                        <label for="name">Name</label>
+                        <input type="text" id="name" name="name">
+                    </div>
+                    <div class="form-group" id="familyCodeGroup" style="display: none;">
+                        <label for="familyCode">Family Code (6 digits)</label>
+                        <input type="text" id="familyCode" name="familyCode" maxlength="6" pattern="\d{6}" placeholder="e.g. 123456">
+                    </div>
+                    <div class="form-group">
+                        <label for="username">Email</label>
+                        <input type="email" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required minlength="6">
+                    </div>
+                    <button type="button" class="submit-btn" id="submitBtn" onclick="handleFormSubmit(event)">Login</button>
+                    <p class="toggle-auth" id="toggleAuth">
+                        Don't have an account? <a href="#" onclick="toggleAuthMode(event)">Sign up</a>
+                    </p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Notification Toast -->
+        <div id="notification" class="notification"></div>
+    </div>
+
+    <!-- demo mode controls removed -->
+
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <!-- Firebase Authentication -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <!-- Firebase Firestore -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <!-- Firebase Storage -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+    <script src="scripts/main.js"></script>
+</body>
+</html>

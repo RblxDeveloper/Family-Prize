@@ -1,0 +1,131 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function to get user data (safe read for rule checks)
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Helper function to check if user is a parent
+    function isParent() {
+      return isSignedIn() && getUserData().role == 'parent';
+    }
+    
+    // Helper function to check if user is a child
+    function isChild() {
+      return isSignedIn() && getUserData().role == 'child';
+    }
+    
+    // Helper function to check if user belongs to the same family
+    function isSameFamily(familyCode) {
+      return isSignedIn() && getUserData().familyCode == familyCode;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own data
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      
+      // Public lookup: allow reading parent profiles (useful for validating family codes during signup)
+      // Note: this exposes parent user documents (limited risk for this app); review before publishing.
+      allow get, list: if resource.data.role == 'parent';
+      
+      // Parents can read ALL users (needed for querying children list by familyCode)
+      allow read: if isSignedIn() && isParent();
+      
+      // Children can read other users in their same family
+      allow read: if isSignedIn() && isChild() && resource.data.familyCode == getUserData().familyCode;
+      
+      // Users can create their own profile during signup
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      
+      // Users can update their own profile
+      allow update: if isSignedIn() && request.auth.uid == userId;
+      
+      // Parents can update children points in their family
+      allow update: if isSignedIn() && isParent() && 
+                       resource.data.familyCode == getUserData().familyCode &&
+                       resource.data.role == 'child';
+    }
+    
+    // Task Templates collection
+    match /taskTemplates/{taskId} {
+      // Anyone in the family can read task templates
+      allow read: if isSignedIn() && isSameFamily(resource.data.familyCode);
+      
+      // Only parents can create task templates
+      allow create: if isSignedIn() && isParent();
+      
+      // Only parents can update/delete their family's tasks
+      allow update, delete: if isSignedIn() && isParent() && 
+                                isSameFamily(resource.data.familyCode);
+    }
+    
+    // Rewards collection
+    match /rewards/{rewardId} {
+      // Anyone in the family can read rewards
+      allow read: if isSignedIn() && isSameFamily(resource.data.familyCode);
+      
+      // Only parents can create rewards
+      allow create: if isSignedIn() && isParent();
+      
+      // Only parents can update/delete their family's rewards
+      allow update, delete: if isSignedIn() && isParent() && 
+                                isSameFamily(resource.data.familyCode);
+    }
+    
+    // Submissions collection
+    match /submissions/{submissionId} {
+      // Children can create submissions with their own userId and familyCode
+      allow create: if isSignedIn() && isChild() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.familyCode == getUserData().familyCode;
+      
+      // Children can read their own submissions
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Parents can read all submissions in their family by familyCode
+      allow read: if isSignedIn() && isParent() && 
+                     resource.data.familyCode == getUserData().familyCode;
+      
+      // Parents can update submissions (approve/decline) in their family
+      allow update: if isSignedIn() && isParent() && 
+                       resource.data.familyCode == getUserData().familyCode;
+    }
+    
+    // Redeemed Rewards collection
+    match /redeemedRewards/{redeemId} {
+      // Children can create redeemed rewards
+      allow create: if isSignedIn() && isChild() && 
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.familyCode == getUserData().familyCode;
+      
+      // Users can read their own redeemed rewards
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Parents can read redeemed rewards in their family
+      allow read: if isSignedIn() && isParent() && 
+                     resource.data.familyCode == getUserData().familyCode;
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // Parents can create notifications for children in their family
+      allow create: if isSignedIn() && isParent() && 
+                       request.resource.data.familyCode == getUserData().familyCode;
+      
+      // Users can update their own notifications (mark as read)
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
