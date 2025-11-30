@@ -8,12 +8,12 @@
 <body>
     <script>
         // GitHub Pages SPA redirect hack
-        // When a user navigates directly to a route like /testing12/child-dashboard.html,
+        // When a user navigates directly to a route like /Family-Prize/child-dashboard.html,
         // GitHub Pages serves this 404.html file. We redirect to index.html which then
         // handles the routing via JavaScript.
         
         const path = window.location.pathname
-        const repo = '/testing12' // Change this to your repo name if different
+        const repo = '/Family-Prize' // Change this to your repo name if different
         
         // Extract the attempted page and redirect to index with it as a query param
         // Then index.html can use the auth system to navigate

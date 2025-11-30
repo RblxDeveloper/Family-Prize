@@ -79,6 +79,76 @@ function getBasePath() {
   return ''
 }
 
+// Enhanced toast notification system with auto-dismiss and animations
+function showToast(message, type = 'success', duration = 4000) {
+  let container = document.getElementById('toastContainer')
+  if (!container) {
+    container = document.createElement('div')
+    container.id = 'toastContainer'
+    container.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    `
+    document.body.appendChild(container)
+  }
+
+  const toast = document.createElement('div')
+  const bgColor = type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#2196F3'
+  const borderColor = type === 'success' ? '#45a049' : type === 'error' ? '#da190b' : type === 'warning' ? '#e68900' : '#0b7dda'
+  
+  toast.style.cssText = `
+    background-color: ${bgColor};
+    color: white;
+    padding: 16px 24px;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 300px;
+    border-left: 4px solid ${borderColor};
+    animation: slideIn 0.3s ease-out;
+    pointer-events: auto;
+    cursor: pointer;
+  `
+  toast.textContent = message
+  
+  container.appendChild(toast)
+  
+  const dismissTimer = setTimeout(() => {
+    toast.style.animation = 'slideOut 0.3s ease-out'
+    setTimeout(() => toast.remove(), 300)
+  }, duration)
+  
+  toast.addEventListener('click', () => {
+    clearTimeout(dismissTimer)
+    toast.style.animation = 'slideOut 0.3s ease-out'
+    setTimeout(() => toast.remove(), 300)
+  })
+}
+
+// Add CSS animations
+if (!document.getElementById('toastStyles')) {
+  const style = document.createElement('style')
+  style.id = 'toastStyles'
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateX(400px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(400px); opacity: 0; }
+    }
+  `
+  document.head.appendChild(style)
+}
+
 function navigateTo(page) {
   const base = getBasePath()
   window.location.href = base + '/' + page
@@ -514,7 +584,7 @@ async function submitTaskForReview() {
       }
     }
 
-    // Create submission in Firestore (store both URL if available and data URLs as fallback)
+    // Create submission data object (will be used for both update and create)
     const submissionData = {
       beforePhoto: beforeURL || null,
       afterPhoto: afterURL || null,
@@ -526,9 +596,13 @@ async function submitTaskForReview() {
 
     // Check if we have an in-progress submission to update, or create a new one
     if (currentTaskInfo.inProgressSubmissionId) {
-      // Update the existing in-progress submission with photos
-      await db.collection("submissions").doc(currentTaskInfo.inProgressSubmissionId).update(submissionData)
-      console.log('[TaskQuest] Updated in-progress submission with photos')
+      // Update the existing in-progress submission with photos and ensure taskId/taskTitle are set
+      await db.collection("submissions").doc(currentTaskInfo.inProgressSubmissionId).update({
+        ...submissionData,
+        taskId: currentTaskInfo.id,
+        taskTitle: currentTaskInfo.title,
+      })
+      console.log('[TaskQuest] Updated in-progress submission with photos and confirmed taskId:', currentTaskInfo.id)
     } else {
       // Create a new submission (fallback if workflow wasn't followed)
       await db.collection("submissions").add({
@@ -542,13 +616,14 @@ async function submitTaskForReview() {
       console.log('[TaskQuest] Created new submission with photos')
     }
 
-    showNotification("✅ Task submitted for review! Your parent will check it soon.", "success")
+    // Show success toast and close modal
+    showToast("✅ Task submitted for review! Your parent will check it soon.", "success", 5000)
     closeUploadModal()
 
     setTimeout(() => {
       loadAvailableTasks()
       loadChildProfile()
-    }, 1000)
+    }, 500)
   } catch (error) {
     console.error("[TaskQuest] Submit task error:", error)
 
@@ -1014,24 +1089,35 @@ function closeUploadModal() {
   const modal = document.getElementById("uploadModal")
   if (modal) {
     modal.style.display = "none"
-    ;["beforePhoto", "afterPhoto"].forEach((id) => {
-      const input = document.getElementById(id)
-      if (input) input.value = ""
-    })
-    ;["beforePreview", "afterPreview"].forEach((id) => {
-      const el = document.getElementById(id)
-      if (el) {
-        el.innerHTML = ""
-        el.style.display = "none"
-      }
-    })
-    ;["beforeUploadBox", "afterUploadBox"].forEach((id) => {
-      const label = document.querySelector(`#${id} .upload-label`)
-      if (label) label.style.display = "flex"
-    })
-    // Reset uploaded photos and task info (keep submission ID safe)
+    // Reset form inputs
+    const beforeInput = document.getElementById("beforePhoto")
+    const afterInput = document.getElementById("afterPhoto")
+    if (beforeInput) beforeInput.value = ""
+    if (afterInput) afterInput.value = ""
+    
+    // Clear preview images
+    const beforePreview = document.getElementById("beforePreview")
+    const afterPreview = document.getElementById("afterPreview")
+    if (beforePreview) {
+      beforePreview.innerHTML = ""
+      beforePreview.style.display = "none"
+    }
+    if (afterPreview) {
+      afterPreview.innerHTML = ""
+      afterPreview.style.display = "none"
+    }
+    
+    // Reset upload labels
+    const beforeLabel = document.querySelector("#beforeUploadBox .upload-label")
+    const afterLabel = document.querySelector("#afterUploadBox .upload-label")
+    if (beforeLabel) beforeLabel.style.display = "flex"
+    if (afterLabel) afterLabel.style.display = "flex"
+    
+    // Clear uploaded photos and task info
     uploadedPhotos = { before: null, after: null }
     currentTaskInfo = { id: null, title: null, inProgressSubmissionId: null, inProgressFamilyCode: null }
+    
+    console.log('[TaskQuest] Upload modal closed and state reset')
   }
 }
 
@@ -1570,6 +1656,10 @@ async function loadChildren() {
         completedCount = completedSnapshot.size
       } catch (e) {
         console.warn('[TaskQuest] Failed to count completed tasks:', e)
+        if (e.message && e.message.includes('Missing or insufficient permissions')) {
+          console.error('[TaskQuest] IMPORTANT: Firestore rules not published. Go to Firebase Console and publish the rules from FIRESTORE_RULES_FINAL.txt')
+          completedCount = 0
+        }
       }
 
       // Count pending tasks (with error handling)
@@ -1583,6 +1673,10 @@ async function loadChildren() {
         pendingCount = pendingSnapshot.size
       } catch (e) {
         console.warn('[TaskQuest] Failed to count pending tasks:', e)
+        if (e.message && e.message.includes('Missing or insufficient permissions')) {
+          console.error('[TaskQuest] IMPORTANT: Firestore rules not published. Go to Firebase Console and publish the rules from FIRESTORE_RULES_FINAL.txt')
+          pendingCount = 0
+        }
       }
 
       const childCard = document.createElement("div")
