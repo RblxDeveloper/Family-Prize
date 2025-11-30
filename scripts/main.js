@@ -90,6 +90,14 @@ function getBasePath() {
   return ''
 }
 
+// Navigate to a page relative to the base path (handles GitHub Pages)
+function navigateTo(page) {
+  const base = getBasePath()
+  const url = base + '/' + page
+  console.log('[TaskQuest] navigateTo:', page, '->', url)
+  window.location.href = url
+}
+
 // Enhanced toast notification system with auto-dismiss and animations
 function showToast(message, type = 'success', duration = 4000) {
   let container = document.getElementById('toastContainer')
