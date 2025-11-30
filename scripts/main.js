@@ -1180,6 +1180,7 @@ document.addEventListener("DOMContentLoaded", () => {
         initializeSectionVisibility()
       } else if (currentPage === "parent-dashboard.html") {
         loadPendingApprovals()
+        loadOngoingTasks()
         loadChildren()
         loadParentTasks()
         loadParentRewards()
@@ -2021,7 +2022,7 @@ async function loadChildProfile() {
           codeInput.style.display = "none"
           linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
 
-          // Try to get parent name
+          // Try to get parent name (with fallback if permissions deny)
           try {
             const parentSnap = await db.collection("users").where("familyCode", "==", userData.familyCode).where("role", "==", "parent").limit(1).get()
             if (!parentSnap.empty) {
@@ -2029,7 +2030,13 @@ async function loadChildProfile() {
               linkedInfo.textContent = `Linked to ${p.name} (Family ${userData.familyCode})`
             }
           } catch (err) {
-            console.warn("Could not fetch parent info:", err)
+            // If permission error, just show family code (app will still work)
+            if (err.message && err.message.includes("Missing or insufficient permissions")) {
+              console.warn("[TaskQuest] Note: Firestore rules not yet published. Parent name not available.")
+              linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
+            } else {
+              console.warn("Could not fetch parent info:", err)
+            }
           }
         } else {
           // Not linked — prompt for code
