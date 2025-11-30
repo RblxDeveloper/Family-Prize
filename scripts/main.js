@@ -162,7 +162,9 @@ if (!document.getElementById('toastStyles')) {
 
 function navigateTo(page) {
   const base = getBasePath()
-  window.location.href = base + '/' + page
+  const url = base + '/' + page
+  console.log('[TaskQuest] navigateTo:', page, '-> full URL:', url)
+  window.location.href = url
 }
 
 // ==========================================
@@ -1079,16 +1081,25 @@ function handleFormSubmit(event) {
 
 async function signInWithGoogle() {
   try {
+    console.log('[TaskQuest] signInWithGoogle() called')
+    
+    if (!auth) {
+      showNotification('Firebase not initialized. Please refresh the page.', 'error')
+      return
+    }
+    
     const googleProvider = new firebase.auth.GoogleAuthProvider()
     googleProvider.addScope('profile')
     googleProvider.addScope('email')
 
     // Try popup first (better UX). If it fails (popup blocker), fall back to redirect.
     try {
+      console.log('[TaskQuest] Attempting popup sign-in...')
       const result = await auth.signInWithPopup(googleProvider)
+      console.log('[TaskQuest] Popup sign-in successful, user:', result.user?.email)
       await processGoogleSignInResult(result)
     } catch (popupErr) {
-      console.warn('[TaskQuest] Popup sign-in failed, falling back to redirect:', popupErr)
+      console.warn('[TaskQuest] Popup sign-in failed, falling back to redirect:', popupErr?.code, popupErr?.message)
       // Inform user about popup blockers in case that's the cause
       if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
         showNotification('Popup blocked or cancelled. Using redirect sign-in as a fallback.', 'warning')
@@ -1096,9 +1107,10 @@ async function signInWithGoogle() {
       // For some errors (unauthorized-domain) redirect won't fix the problem, but we still attempt
       // redirect because it may work where popup was blocked.
       try {
+        console.log('[TaskQuest] Attempting redirect sign-in...')
         await auth.signInWithRedirect(googleProvider)
       } catch (redirectErr) {
-        console.error('[TaskQuest] Redirect sign-in also failed:', redirectErr)
+        console.error('[TaskQuest] Redirect sign-in also failed:', redirectErr?.code, redirectErr?.message)
         if (redirectErr.code === 'auth/unauthorized-domain') {
           showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
         } else {
@@ -1107,29 +1119,24 @@ async function signInWithGoogle() {
       }
     }
   } catch (error) {
-    console.error("[TaskQuest] Google Sign-In error:", error)
-    if (error.code === 'auth/popup-closed-by-user') {
-      showNotification('Sign-in cancelled', 'error')
-    } else if (error.code === 'auth/popup-blocked') {
-      showNotification('Please allow popups for Google Sign-In', 'error')
-    } else if (error.code === 'auth/unauthorized-domain') {
-      showNotification('Unauthorized domain. Add your domain under Firebase Console → Auth → Authorized domains.', 'error')
-    } else {
-      showNotification('Google Sign-In failed: ' + error.message, 'error')
-    }
+    console.error("[TaskQuest] Google Sign-In outer error:", error)
+    showNotification('Google Sign-In failed: ' + (error?.message || String(error)), 'error')
   }
 }
 
 // Dedicated handler for redirect sign-in results (called on every page load)
 async function handleRedirectSignIn() {
   try {
+    console.log('[TaskQuest] handleRedirectSignIn: checking for redirect result...')
     const result = await auth.getRedirectResult()
     if (result && result.user) {
-      console.log('[TaskQuest] Redirect sign-in result detected, processing...')
+      console.log('[TaskQuest] Redirect sign-in result detected, user:', result.user.email)
       await processGoogleSignInResult(result)
+    } else {
+      console.log('[TaskQuest] No redirect result found')
     }
   } catch (err) {
-    console.warn('[TaskQuest] getRedirectResult error:', err)
+    console.warn('[TaskQuest] getRedirectResult error:', err?.code, err?.message)
     if (err && err.code === 'auth/unauthorized-domain') {
       showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
     }
@@ -1138,19 +1145,37 @@ async function handleRedirectSignIn() {
 
 // Centralized processing for a Google sign-in result (popup or redirect)
 async function processGoogleSignInResult(result) {
-  if (!result || !result.user) return
+  if (!result || !result.user) {
+    console.warn('[TaskQuest] processGoogleSignInResult: no user in result')
+    return
+  }
   const user = result.user
+  console.log('[TaskQuest] processGoogleSignInResult: user =', user.uid, user.email)
+  
   try {
+    if (!db) {
+      console.error('[TaskQuest] Firestore not initialized!')
+      showNotification('Database not initialized. Please refresh the page.', 'error')
+      return
+    }
+    
+    console.log('[TaskQuest] Fetching user doc from Firestore...')
     const userDoc = await db.collection('users').doc(user.uid).get()
+    console.log('[TaskQuest] User doc exists:', userDoc.exists)
+    
     if (userDoc.exists) {
       const userData = userDoc.data()
+      console.log('[TaskQuest] User data:', userData?.role)
+      
       if (userData.role === 'parent') {
+        console.log('[TaskQuest] Showing parent PIN verification')
         showNotification('Welcome back, Parent!', 'success')
         // Delay parent verification modal to ensure DOM is ready
         setTimeout(() => {
           showParentPinVerification()
         }, 300)
       } else if (userData.role === 'child') {
+        console.log('[TaskQuest] Navigating child to dashboard')
         showNotification('Welcome back!', 'success')
         // Close any open modal and delay navigation
         try {
@@ -1159,16 +1184,23 @@ async function processGoogleSignInResult(result) {
         } catch (e) {}
         // Delay to allow UI to settle
         setTimeout(() => {
+          console.log('[TaskQuest] Calling navigateTo child-dashboard.html')
           navigateTo('child-dashboard.html')
         }, 800)
       }
     } else {
       // New user - need to determine role and complete profile
+      console.log('[TaskQuest] New user, showing role selection')
       showGoogleRoleSelection(user)
     }
   } catch (err) {
     console.error('[TaskQuest] Failed processing Google sign-in result:', err)
-    showNotification('Sign-in succeeded but processing failed: ' + err.message, 'error')
+    const errMsg = err?.message || String(err)
+    if (errMsg.includes('Missing or insufficient permissions')) {
+      showNotification('Permission denied reading user profile. Check Firestore rules.', 'error')
+    } else {
+      showNotification('Sign-in succeeded but processing failed: ' + errMsg, 'error')
+    }
   }
 }
 
