@@ -683,6 +683,7 @@ async function approveTask(taskId, element) {
 
     setTimeout(() => {
       loadPendingApprovals()
+      loadOngoingTasks()
     }, 1000)
   } catch (error) {
     console.error("[TaskQuest] Approve task error:", error)
@@ -701,6 +702,7 @@ async function declineTask(taskId, element) {
 
     setTimeout(() => {
       loadPendingApprovals()
+      loadOngoingTasks()
     }, 1000)
   } catch (error) {
     console.error("[TaskQuest] Decline task error:", error)
