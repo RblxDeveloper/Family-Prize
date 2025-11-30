@@ -390,22 +390,11 @@ async function signupAsChild() {
   }
 
   try {
-    const parentQuery = await db
-      .collection("users")
-      .where("familyCode", "==", familyCode)
-      .where("role", "==", "parent")
-      .get()
-
-    if (parentQuery.empty) {
-      showNotification("Invalid family code. Please check with your parent.", "error")
-      return
-    }
-
-    // Create user account
+    // Create user account FIRST
     const userCredential = await auth.createUserWithEmailAndPassword(email, password)
     const user = userCredential.user
 
-    // Store user data in Firestore with error handling
+    // NOW try to create the profile with family code
     try {
       await db.collection("users").doc(user.uid).set({
         name: name,
@@ -417,11 +406,11 @@ async function signupAsChild() {
       })
     } catch (dbError) {
       console.error("[TaskQuest] Firestore write error:", dbError)
-      // If Firestore fails, delete the auth account to keep things in sync
+      // If Firestore fails, delete the auth account
       await user.delete().catch(e => console.warn("Could not delete auth user", e))
       
       if (dbError.code === "permission-denied") {
-        showNotification("Database setup incomplete. Please publish Firestore rules in Firebase Console.", "error")
+        showNotification("Database setup incomplete. Please contact your parent.", "error")
       } else {
         showNotification("Signup failed: " + dbError.message, "error")
       }

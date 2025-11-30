@@ -30,16 +30,16 @@ service cloud.firestore {
       return isSignedIn() && getUserData() != null && getUserData().familyCode == familyCode;
     }
     
-    // Users collection
+    // Users collection - MOST PERMISSIVE FOR SIGNUP
     match /users/{userId} {
-      // Create: any authenticated user can create their own profile (for signup)
+      // Allow ANY authenticated user to create their own profile (for signup)
       allow create: if isSignedIn() && request.auth.uid == userId;
 
-      // Read: allow owners to read their profile; allow any family member to read within the family
+      // Read: owner or family members
       allow get: if isSignedIn() && (request.auth.uid == userId || isSameFamily(resource.data.familyCode));
       allow list: if isSignedIn() && isParent();
 
-      // Update: users can update their own profile; parents can update child profiles
+      // Update: owner or parent
       allow update: if (isSignedIn() && request.auth.uid == userId) || (isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode && resource.data.role == 'child');
 
       // Delete: not allowed
@@ -66,7 +66,10 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
 
       // Read: user's own or family members
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSameFamily(resource.data.familyCode));
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isSameFamily(resource.data.familyCode)
+      );
 
       // Parents can update (approve/decline)
       allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
