@@ -371,8 +371,6 @@ async function signupAsChild() {
   const email = document.getElementById("username").value
   const password = document.getElementById("password").value
   const name = document.getElementById("name").value
-  const familyCodeInput = document.getElementById("familyCode")
-  const familyCode = familyCodeInput ? familyCodeInput.value.trim() : null
 
   if (!email || !password || !name) {
     showNotification("Please fill in all fields", "error")
@@ -384,24 +382,19 @@ async function signupAsChild() {
     return
   }
 
-  if (!familyCode || familyCode.length !== 6 || isNaN(familyCode)) {
-    showNotification("Invalid family code. Please get the code from your parent.", "error")
-    return
-  }
-
   try {
     // Create user account FIRST
     const userCredential = await auth.createUserWithEmailAndPassword(email, password)
     const user = userCredential.user
 
-    // NOW try to create the profile with family code
+    // NOW try to create the profile (will be linked to family later by parent)
     try {
       await db.collection("users").doc(user.uid).set({
         name: name,
         email: email,
         role: "child",
         points: 0,
-        familyCode: familyCode,
+        familyCode: null, // Will be set when parent adds them
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       })
     } catch (dbError) {
@@ -410,14 +403,14 @@ async function signupAsChild() {
       await user.delete().catch(e => console.warn("Could not delete auth user", e))
       
       if (dbError.code === "permission-denied") {
-        showNotification("Database setup incomplete. Please contact your parent.", "error")
+        showNotification("Database setup incomplete. Please contact administrator.", "error")
       } else {
         showNotification("Signup failed: " + dbError.message, "error")
       }
       return
     }
 
-    showNotification("Account created successfully! Welcome to TaskQuest!", "success")
+    showNotification("Account created! Ask your parent to add you to the family.", "success")
     closeLoginModal()
     setTimeout(() => {
       navigateTo("child-dashboard.html")
@@ -952,15 +945,6 @@ function toggleAuthMode(event) {
     formTitle.textContent = currentUserType === "child" ? "Child Sign Up" : "Parent Sign Up"
     submitBtn.textContent = "Sign Up"
     nameGroup.style.display = "block"
-    // show family code input for child signups
-    const familyGroup = document.getElementById("familyCodeGroup")
-    if (currentUserType === "child" && familyGroup) {
-      familyGroup.style.display = "block"
-      familyGroup.querySelector("input").required = true
-    } else if (familyGroup) {
-      familyGroup.style.display = "none"
-      familyGroup.querySelector("input").required = false
-    }
     nameGroup.querySelector("input").required = true
     toggleAuth.innerHTML = 'Already have an account? <a href="#" onclick="toggleAuthMode(event)">Login</a>'
 
@@ -977,11 +961,6 @@ function toggleAuthMode(event) {
     submitBtn.textContent = "Login"
     nameGroup.style.display = "none"
     nameGroup.querySelector("input").required = false
-    const familyGroup = document.getElementById("familyCodeGroup")
-    if (familyGroup) {
-      familyGroup.style.display = "none"
-      familyGroup.querySelector("input").required = false
-    }
     toggleAuth.innerHTML = 'Don\'t have an account? <a href="#" onclick="toggleAuthMode(event)">Sign up</a>'
 
     loginForm.onsubmit = (e) => {
@@ -1106,36 +1085,18 @@ async function completeGoogleSignup(uid, displayName, role, originalContent) {
       closeLoginModal()
       showParentPinVerification()
     } else {
-      // Child needs family code
-      const familyCode = prompt("Enter your Family Code (6 digits):")
-      
-      if (!familyCode || familyCode.length !== 6 || isNaN(familyCode)) {
-        showNotification("Invalid family code. Please get the code from your parent.", "error")
-        return
-      }
-      
-      const parentQuery = await db
-        .collection("users")
-        .where("familyCode", "==", familyCode)
-        .where("role", "==", "parent")
-        .get()
-      
-      if (parentQuery.empty) {
-        showNotification("Invalid family code. Please check with your parent.", "error")
-        return
-      }
-      
+      // Child signup - will be added to family by parent
       await db.collection("users").doc(uid).set({
         name: displayName,
         email: auth.currentUser.email,
         role: "child",
         points: 0,
-        familyCode: familyCode,
+        familyCode: null,
         authProvider: "google",
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       })
       
-      showNotification("Welcome to TaskQuest!", "success")
+      showNotification("Account created! Ask your parent to add you to the family.", "success")
       closeLoginModal()
       navigateTo("child-dashboard.html")
     }
