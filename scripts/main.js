@@ -617,7 +617,7 @@ async function submitTaskForReview() {
     }
 
     // Show success toast and close modal
-    showToast("✅ Task submitted for review! Your parent will check it soon.", "success", 5000)
+    showToast("Submitted successfully!", "success", 5000)
     closeUploadModal()
 
     setTimeout(() => {
@@ -1339,21 +1339,62 @@ async function loadAvailableTasks() {
       inProgressTaskIds.add(doc.data().taskId)
     })
 
+    // Get all in-progress submissions for the family (to check if other children are working on tasks)
+    const allInProgressSnapshot = await db.collection("submissions")
+      .where("familyCode", "==", familyCode)
+      .where("status", "==", "in-progress")
+      .get()
+
+    const inProgressByOthers = {}
+    for (const doc of allInProgressSnapshot.docs) {
+      const data = doc.data()
+      if (data.userId !== user.uid) {
+        // Get child name
+        let childName = "Unknown"
+        try {
+          const childDoc = await db.collection("users").doc(data.userId).get()
+          childName = childDoc.exists ? childDoc.data().name : "Unknown"
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to load child name for in-progress task:', e)
+        }
+        inProgressByOthers[data.taskId] = childName
+      }
+    }
+
+    // Get approved submissions for this user to hide completed tasks
+    const approvedSnapshot = await db.collection("submissions")
+      .where("userId", "==", user.uid)
+      .where("status", "==", "approved")
+      .get()
+
+    const approvedTaskIds = new Set()
+    approvedSnapshot.forEach((doc) => {
+      approvedTaskIds.add(doc.data().taskId)
+    })
+
     tasksGrid.innerHTML = ""
 
     tasksSnapshot.forEach((doc) => {
       const task = doc.data()
       const taskId = doc.id
       const isInProgress = inProgressTaskIds.has(taskId)
+      const isApproved = approvedTaskIds.has(taskId)
+      const inProgressByOther = inProgressByOthers[taskId]
+
+      // Skip tasks that this child has already completed and approved
+      if (isApproved) return
 
       const taskCard = document.createElement("div")
       taskCard.className = `child-task-card ${isInProgress ? 'in-progress' : ''}`
-      
-      const buttonText = isInProgress ? '⏳ Finish Task' : 'Start Task'
-      const buttonClass = isInProgress ? 'finish-task-btn' : 'start-task-btn'
-      const buttonAction = isInProgress 
-        ? `finishTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')`
-        : `startTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')`
+
+      let buttonHtml = ''
+      if (inProgressByOther) {
+        buttonHtml = `<span class="in-progress-status">⏳ In progress by ${inProgressByOther}</span>`
+      } else if (isInProgress) {
+        buttonHtml = `<button class="finish-task-btn" onclick="finishTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')">⏳ Finish Task</button>`
+      } else {
+        buttonHtml = `<button class="start-task-btn" onclick="startTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')">Start Task</button>`
+      }
 
       taskCard.innerHTML = `
         <div class="task-icon-large">${task.icon || "📋"}</div>
@@ -1361,7 +1402,7 @@ async function loadAvailableTasks() {
         <p>${task.description}</p>
         <div class="task-footer">
           <span class="task-points">+${task.points} pts</span>
-          <button class="${buttonClass}" onclick="${buttonAction}">${buttonText}</button>
+          ${buttonHtml}
         </div>
       `
       tasksGrid.appendChild(taskCard)
