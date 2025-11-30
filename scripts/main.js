@@ -21,6 +21,10 @@ const firebaseConfig = {
 // Declare the firebase variable
 let db, storage, auth
 
+// Feature flag: disable Firebase Storage uploads when running on GitHub Pages
+// or when Firebase Storage CORS isn't configured. Set to true to re-enable.
+const USE_FIREBASE_STORAGE = false
+
 if (typeof firebase !== "undefined" && firebase) {
   try {
     firebase.initializeApp(firebaseConfig)
@@ -540,9 +544,9 @@ async function submitTaskForReview() {
     let beforeDataUrl = null
     let afterDataUrl = null
 
-    // Tier 1: Try Firebase Storage
+    // Tier 1: Try Firebase Storage (only if enabled)
     try {
-      if (typeof storage !== 'undefined' && storage) {
+      if (USE_FIREBASE_STORAGE && typeof storage !== 'undefined' && storage) {
         const beforeRef = storage.ref(`tasks/${user.uid}/${timestamp}_before.jpg`)
         const afterRef = storage.ref(`tasks/${user.uid}/${timestamp}_after.jpg`)
         await beforeRef.put(uploadedPhotos.before)
@@ -551,10 +555,11 @@ async function submitTaskForReview() {
         afterURL = await afterRef.getDownloadURL()
         console.log('[TaskQuest] Photos uploaded to Firebase Storage')
       } else {
+        // Skip Firebase Storage (likely CORS issue on static hosting)
         throw new Error('StorageUnavailable')
       }
     } catch (storageErr) {
-      console.warn('[TaskQuest] Storage upload failed, attempting Cloudinary:', storageErr)
+      console.warn('[TaskQuest] Storage upload failed or skipped, attempting Cloudinary/data-URL fallback:', storageErr)
       // Tier 2: Try Cloudinary unsigned upload
       try {
         if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET) {
