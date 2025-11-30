@@ -1172,22 +1172,27 @@ async function processGoogleSignInResult(result) {
   }
 }
 
+// Store current Google user for role selection (avoid HTML escaping issues)
+let pendingGoogleUser = null
+
 function showGoogleRoleSelection(googleUser) {
-  // Create a modal to select role for new Google users
+  // Store the user in a variable to avoid HTML escaping issues
+  pendingGoogleUser = googleUser
+  
   const modal = document.getElementById("loginModal")
   const modalContent = modal.querySelector(".modal-content")
-  const originalContent = modalContent.innerHTML
   
+  // Clear and rebuild modal safely
   modalContent.innerHTML = `
     <span class="close" onclick="closeLoginModal()">&times;</span>
     <h2>Welcome to TaskQuest!</h2>
     <p style="color: var(--text-secondary); margin: 20px 0;">Are you a Parent or a Child?</p>
     <div style="display: flex; gap: 16px; flex-direction: column;">
-      <button type="button" class="login-btn parent-login" onclick="completeGoogleSignup('${googleUser.uid}', '${googleUser.displayName || googleUser.email}', 'parent', '${originalContent}')">
+      <button type="button" class="login-btn parent-login" onclick="completeGoogleSignupWithRole('parent'); return false;">
         <span class="btn-icon">👨‍👩‍👧‍👦</span>
         <span class="btn-text">I'm a Parent</span>
       </button>
-      <button type="button" class="login-btn child-login" onclick="completeGoogleSignup('${googleUser.uid}', '${googleUser.displayName || googleUser.email}', 'child', '${originalContent}')">
+      <button type="button" class="login-btn child-login" onclick="completeGoogleSignupWithRole('child'); return false;">
         <span class="btn-icon">🎮</span>
         <span class="btn-text">I'm a Child</span>
       </button>
@@ -1195,7 +1200,16 @@ function showGoogleRoleSelection(googleUser) {
   `
 }
 
-async function completeGoogleSignup(uid, displayName, role, originalContent) {
+// Wrapper to complete Google signup using the stored pendingGoogleUser
+async function completeGoogleSignupWithRole(role) {
+  if (!pendingGoogleUser) {
+    showNotification('Session expired. Please sign in again.', 'error')
+    return
+  }
+  await completeGoogleSignup(pendingGoogleUser.uid, pendingGoogleUser.displayName || pendingGoogleUser.email, role)
+}
+
+async function completeGoogleSignup(uid, displayName, role) {
   try {
     if (role === "parent") {
       // Parent needs to create a family code
@@ -1220,6 +1234,7 @@ async function completeGoogleSignup(uid, displayName, role, originalContent) {
       
       showNotification(`Welcome! Your Family Code is: ${familyCode} - Share this with your children!`, "success")
       closeLoginModal()
+      pendingGoogleUser = null
       // Small delay before showing parent verification to ensure DOM is ready
       setTimeout(() => {
         showParentPinVerification()
@@ -1238,6 +1253,7 @@ async function completeGoogleSignup(uid, displayName, role, originalContent) {
       
       showNotification("Account created! Ask your parent to add you to the family.", "success")
       closeLoginModal()
+      pendingGoogleUser = null
       // Delay navigation to ensure modal cleanup and DOM settlement
       setTimeout(() => {
         navigateTo("child-dashboard.html")
@@ -1246,6 +1262,8 @@ async function completeGoogleSignup(uid, displayName, role, originalContent) {
   } catch (error) {
     console.error("[TaskQuest] Google signup completion error:", error)
     showNotification("Signup failed: " + error.message, "error")
+    // Reset pending user on error
+    pendingGoogleUser = null
   }
 }
 
