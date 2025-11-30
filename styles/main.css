@@ -405,6 +405,80 @@ body {
   line-height: 1.6;
 }
 
+/* Family Request Card */
+.family-request-card {
+  background: var(--surface);
+  border: 2px solid #FFA500;
+  border-left: 5px solid #FFA500;
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  animation: slideIn 0.3s ease;
+}
+
+.request-header h4 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+}
+
+.request-header small {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.request-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-approve,
+.btn-decline {
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-approve {
+  background: #4CAF50;
+  color: white;
+}
+
+.btn-approve:hover {
+  background: #45a049;
+  box-shadow: var(--shadow);
+}
+
+.btn-decline {
+  background: #f44336;
+  color: white;
+}
+
+.btn-decline:hover {
+  background: #da190b;
+  box-shadow: var(--shadow);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .child-info {
   display: flex;
   justify-content: space-between;

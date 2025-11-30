@@ -87,5 +87,20 @@ service cloud.firestore {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSameFamily(resource.data.familyCode));
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
+    
+    // Family Requests collection - for child join requests
+    match /familyRequests/{requestId} {
+      // Children can create requests to join a family
+      allow create: if isSignedIn() && isChild() && request.resource.data.childId == request.auth.uid;
+      
+      // Parents can read requests for their family
+      allow read: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+      
+      // Parents can approve/decline requests in their family
+      allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+      
+      // Only pending requests can be deleted by parent
+      allow delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode && resource.data.status == 'pending';
+    }
   }
 }

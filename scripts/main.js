@@ -2128,30 +2128,44 @@ async function loadChildProfile() {
 
       if (familyCard && linkedInfo && codeInput) {
         if (userData.familyCode) {
-          // Child is linked — show parent info if available
+          // Child is linked — show parent info
           codeInput.style.display = "none"
-          linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
-
-          // Try to get parent name (with fallback if permissions deny)
+          
+          // Get parent name
           try {
-            const parentSnap = await db.collection("users").where("familyCode", "==", userData.familyCode).where("role", "==", "parent").limit(1).get()
+            const parentSnap = await db
+              .collection("users")
+              .where("familyCode", "==", userData.familyCode)
+              .where("role", "==", "parent")
+              .limit(1)
+              .get()
+            
             if (!parentSnap.empty) {
               const p = parentSnap.docs[0].data()
-              linkedInfo.textContent = `Linked to ${p.name} (Family ${userData.familyCode})`
+              linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${p.name}</strong><br><small>Family Code: ${userData.familyCode}</small>`
+            } else {
+              linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
             }
           } catch (err) {
-            // If permission error, just show family code (app will still work)
-            if (err.message && err.message.includes("Missing or insufficient permissions")) {
-              console.warn("[TaskQuest] Note: Firestore rules not yet published. Parent name not available.")
-              linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
-            } else {
-              console.warn("Could not fetch parent info:", err)
-            }
+            linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
           }
         } else {
-          // Not linked — prompt for code
-          codeInput.style.display = "inline-block"
-          linkedInfo.textContent = "Not linked to a family yet."
+          // Check for pending requests
+          const pendingReqs = await db
+            .collection("familyRequests")
+            .where("childId", "==", user.uid)
+            .where("status", "==", "pending")
+            .get()
+          
+          if (!pendingReqs.empty) {
+            const req = pendingReqs.docs[0].data()
+            codeInput.style.display = "none"
+            linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for ${req.parentName} to approve</small>`
+          } else {
+            // Not linked and no pending request
+            codeInput.style.display = "inline-block"
+            linkedInfo.textContent = "Not linked to a family yet."
+          }
         }
       }
     } catch (uiErr) {
@@ -2432,20 +2446,231 @@ async function setFamilyCodeForChild() {
       return
     }
 
-    // Directly set the familyCode on the child's user doc.
-    // We avoid querying other users (that can trigger permission errors).
-    await db.collection("users").doc(user.uid).update({ familyCode: code })
-    showNotification("Successfully linked to parent! Tasks will appear shortly.", "success")
+    // Find the parent with this family code
+    const parentQuery = await db
+      .collection("users")
+      .where("familyCode", "==", code)
+      .where("role", "==", "parent")
+      .limit(1)
+      .get()
 
-    // Refresh child-specific views
-    setTimeout(() => {
-      loadChildProfile()
-      loadAvailableTasks()
-      loadRewards()
-    }, 800)
+    if (parentQuery.empty) {
+      showNotification("Invalid family code. Please check with your parent.", "error")
+      return
+    }
+
+    const parentDoc = parentQuery.docs[0]
+    const parentData = parentDoc.data()
+
+    // Create a family request that needs parent approval
+    const requestRef = await db.collection("familyRequests").add({
+      childId: user.uid,
+      childName: (await db.collection("users").doc(user.uid).get()).data().name,
+      childEmail: user.email,
+      parentId: parentDoc.id,
+      parentName: parentData.name,
+      familyCode: code,
+      status: "pending", // pending, approved, or declined
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      respondedAt: null,
+    })
+
+    showNotification("Request sent! Waiting for parent approval...", "success")
+    input.value = ""
+    
+    // Refresh to show pending status
+    setTimeout(() => loadChildProfile(), 1000)
   } catch (error) {
     console.error("[TaskQuest] setFamilyCodeForChild error:", error)
     await handleFirestoreError(error, document.getElementById("childFamilyLinkCard"))
+  }
+}
+
+// Setup real-time listener for tasks (auto-update when parent adds tasks)
+function setupTasksListener() {
+  if (!auth.currentUser) return
+  
+  const user = auth.currentUser
+  const unsubscribe = db
+    .collection("taskTemplates")
+    .where("familyCode", "==", getUserFamilyCode())
+    .onSnapshot(
+      (snapshot) => {
+        console.log("[TaskQuest] Tasks updated - reloading...")
+        loadAvailableTasks()
+      },
+      (error) => {
+        console.warn("[TaskQuest] Tasks listener error:", error)
+      }
+    )
+  
+  return unsubscribe
+}
+
+// Setup real-time listener for rewards (auto-update when parent adds rewards)
+function setupRewardsListener() {
+  if (!auth.currentUser) return
+  
+  const familyCode = getUserFamilyCode()
+  if (!familyCode) return
+  
+  const unsubscribe = db
+    .collection("rewards")
+    .where("familyCode", "==", familyCode)
+    .onSnapshot(
+      (snapshot) => {
+        console.log("[TaskQuest] Rewards updated - reloading...")
+        loadRewards()
+      },
+      (error) => {
+        console.warn("[TaskQuest] Rewards listener error:", error)
+      }
+    )
+  
+  return unsubscribe
+}
+
+// Setup real-time listener for submissions (auto-update when parent approves/declines)
+function setupSubmissionsListener() {
+  if (!auth.currentUser) return
+  
+  const familyCode = getUserFamilyCode()
+  if (!familyCode) return
+  
+  const unsubscribe = db
+    .collection("submissions")
+    .where("familyCode", "==", familyCode)
+    .onSnapshot(
+      (snapshot) => {
+        console.log("[TaskQuest] Submissions updated - reloading...")
+        loadAvailableTasks()
+        loadActivityHistory()
+      },
+      (error) => {
+        console.warn("[TaskQuest] Submissions listener error:", error)
+      }
+    )
+  
+  return unsubscribe
+}
+
+// Get user's family code
+function getUserFamilyCode() {
+  if (!auth.currentUser) return null
+  const userDoc = db.collection("users").doc(auth.currentUser.uid)
+  // This will fetch from memory if already loaded, or you can cache it
+  return null // Will be set when user data is loaded
+}
+
+// Setup listeners for pending family requests (parent side)
+function setupFamilyRequestsListener() {
+  if (!auth.currentUser) return
+  
+  const user = auth.currentUser
+  const unsubscribe = db
+    .collection("familyRequests")
+    .where("parentId", "==", user.uid)
+    .where("status", "==", "pending")
+    .onSnapshot(
+      (snapshot) => {
+        console.log("[TaskQuest] New family requests - updating...")
+        loadPendingFamilyRequests()
+      },
+      (error) => {
+        console.warn("[TaskQuest] Family requests listener error:", error)
+      }
+    )
+  
+  return unsubscribe
+}
+
+// Load pending family requests for parent
+async function loadPendingFamilyRequests() {
+  try {
+    const user = auth.currentUser
+    if (!user) return
+
+    const requests = await db
+      .collection("familyRequests")
+      .where("parentId", "==", user.uid)
+      .where("status", "==", "pending")
+      .get()
+
+    const container = document.getElementById("pendingFamilyRequests")
+    if (!container) return
+
+    if (requests.empty) {
+      container.innerHTML = '<div class="empty-state"><p>No pending family requests</p></div>'
+      return
+    }
+
+    container.innerHTML = ""
+
+    for (const doc of requests.docs) {
+      const req = doc.data()
+      const requestId = doc.id
+
+      const card = document.createElement("div")
+      card.className = "family-request-card"
+      card.innerHTML = `
+        <div class="request-header">
+          <h4>${req.childName}</h4>
+          <small>${req.childEmail}</small>
+        </div>
+        <div class="request-actions">
+          <button class="btn-approve" onclick="approveFamilyRequest('${requestId}', '${req.childId}', '${req.familyCode}')">
+            ✓ Approve
+          </button>
+          <button class="btn-decline" onclick="declineFamilyRequest('${requestId}')">
+            ✗ Decline
+          </button>
+        </div>
+      `
+      container.appendChild(card)
+    }
+  } catch (error) {
+    console.error("[TaskQuest] Load pending requests error:", error)
+  }
+}
+
+// Approve a family request
+async function approveFamilyRequest(requestId, childId, familyCode) {
+  try {
+    // Update the child's familyCode
+    await db.collection("users").doc(childId).update({
+      familyCode: familyCode
+    })
+
+    // Mark request as approved
+    await db.collection("familyRequests").doc(requestId).update({
+      status: "approved",
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+
+    showNotification("Child added to family!", "success")
+    loadPendingFamilyRequests()
+    // Refresh children list
+    setTimeout(() => loadChildrenProfiles(), 500)
+  } catch (error) {
+    console.error("[TaskQuest] Approve request error:", error)
+    showNotification("Failed to approve request: " + error.message, "error")
+  }
+}
+
+// Decline a family request
+async function declineFamilyRequest(requestId) {
+  try {
+    // Mark request as declined
+    await db.collection("familyRequests").doc(requestId).update({
+      status: "declined",
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+
+    showNotification("Request declined", "success")
+    loadPendingFamilyRequests()
+  } catch (error) {
+    console.error("[TaskQuest] Decline request error:", error)
+    showNotification("Failed to decline request: " + error.message, "error")
   }
 }
 
