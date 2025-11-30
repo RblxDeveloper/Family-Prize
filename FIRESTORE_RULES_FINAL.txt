@@ -87,8 +87,8 @@ service cloud.firestore {
     
     // Family Requests collection - for child join requests
     match /familyRequests/{requestId} {
-      // Children can create requests to join a family
-      allow create: if isSignedIn() && isChild() && request.resource.data.childId == request.auth.uid;
+      // ANY authenticated user can create requests (no role check to avoid chicken-and-egg issue)
+      allow create: if isSignedIn() && request.resource.data.childId == request.auth.uid;
       
       // Parents can read requests for their family
       allow read: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
@@ -98,6 +98,7 @@ service cloud.firestore {
       
       // Only pending requests can be deleted by parent
       allow delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode && resource.data.status == 'pending';
+    }
     }
   }
 }
