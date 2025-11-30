@@ -220,20 +220,8 @@ if (auth) {
   })
 
   // Handle redirect sign-in results (if user used redirect fallback)
-  try {
-    auth.getRedirectResult().then((result) => {
-      if (result && result.user) {
-        processGoogleSignInResult(result)
-      }
-    }).catch((err) => {
-      console.warn('[TaskQuest] getRedirectResult error:', err)
-      if (err && err.code === 'auth/unauthorized-domain') {
-        showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
-      }
-    })
-  } catch (e) {
-    console.warn('[TaskQuest] getRedirectResult not available or failed:', e)
-  }
+  // This runs on every page load to catch redirect completions
+  handleRedirectSignIn()
 }
 
 // ==========================================
@@ -1132,6 +1120,22 @@ async function signInWithGoogle() {
   }
 }
 
+// Dedicated handler for redirect sign-in results (called on every page load)
+async function handleRedirectSignIn() {
+  try {
+    const result = await auth.getRedirectResult()
+    if (result && result.user) {
+      console.log('[TaskQuest] Redirect sign-in result detected, processing...')
+      await processGoogleSignInResult(result)
+    }
+  } catch (err) {
+    console.warn('[TaskQuest] getRedirectResult error:', err)
+    if (err && err.code === 'auth/unauthorized-domain') {
+      showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
+    }
+  }
+}
+
 // Centralized processing for a Google sign-in result (popup or redirect)
 async function processGoogleSignInResult(result) {
   if (!result || !result.user) return
@@ -1142,10 +1146,21 @@ async function processGoogleSignInResult(result) {
       const userData = userDoc.data()
       if (userData.role === 'parent') {
         showNotification('Welcome back, Parent!', 'success')
-        showParentPinVerification()
+        // Delay parent verification modal to ensure DOM is ready
+        setTimeout(() => {
+          showParentPinVerification()
+        }, 300)
       } else if (userData.role === 'child') {
         showNotification('Welcome back!', 'success')
-        navigateTo('child-dashboard.html')
+        // Close any open modal and delay navigation
+        try {
+          const modal = document.getElementById('loginModal')
+          if (modal) modal.style.display = 'none'
+        } catch (e) {}
+        // Delay to allow UI to settle
+        setTimeout(() => {
+          navigateTo('child-dashboard.html')
+        }, 800)
       }
     } else {
       // New user - need to determine role and complete profile
@@ -1205,7 +1220,10 @@ async function completeGoogleSignup(uid, displayName, role, originalContent) {
       
       showNotification(`Welcome! Your Family Code is: ${familyCode} - Share this with your children!`, "success")
       closeLoginModal()
-      showParentPinVerification()
+      // Small delay before showing parent verification to ensure DOM is ready
+      setTimeout(() => {
+        showParentPinVerification()
+      }, 300)
     } else {
       // Child signup - will be added to family by parent
       await db.collection("users").doc(uid).set({
@@ -1220,7 +1238,10 @@ async function completeGoogleSignup(uid, displayName, role, originalContent) {
       
       showNotification("Account created! Ask your parent to add you to the family.", "success")
       closeLoginModal()
-      navigateTo("child-dashboard.html")
+      // Delay navigation to ensure modal cleanup and DOM settlement
+      setTimeout(() => {
+        navigateTo("child-dashboard.html")
+      }, 800)
     }
   } catch (error) {
     console.error("[TaskQuest] Google signup completion error:", error)
