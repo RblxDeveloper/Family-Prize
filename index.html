@@ -78,6 +78,16 @@
                         <input type="password" id="password" name="password" required minlength="6">
                     </div>
                     <button type="button" class="submit-btn" id="submitBtn" onclick="handleFormSubmit(event)">Login</button>
+                    
+                    <!-- Google Sign-In Button -->
+                    <div class="divider-or">
+                        <span>OR</span>
+                    </div>
+                    <button type="button" class="google-signin-btn" id="googleSignInBtn" onclick="signInWithGoogle()">
+                        <span class="google-icon">🔍</span>
+                        <span class="google-text">Sign in with Google</span>
+                    </button>
+                    
                     <p class="toggle-auth" id="toggleAuth">
                         Don't have an account? <a href="#" onclick="toggleAuthMode(event)">Sign up</a>
                     </p>

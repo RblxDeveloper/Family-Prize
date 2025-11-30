@@ -39,6 +39,11 @@ if (typeof firebase !== "undefined" && firebase) {
         console.warn("[TaskQuest] Persistence setup failed:", error)
       })
     
+    // Configure Google Sign-In provider
+    const googleProvider = new firebase.auth.GoogleAuthProvider()
+    googleProvider.addScope('profile')
+    googleProvider.addScope('email')
+    
     console.log("[TaskQuest] Firebase initialized successfully")
   } catch (e) {
     console.warn("[TaskQuest] Firebase present but initialization failed:", e)
@@ -994,6 +999,131 @@ function handleFormSubmit(event) {
     } else {
       signupAsParent()
     }
+  }
+}
+
+async function signInWithGoogle() {
+  try {
+    const googleProvider = new firebase.auth.GoogleAuthProvider()
+    googleProvider.addScope('profile')
+    googleProvider.addScope('email')
+    
+    const result = await auth.signInWithPopup(googleProvider)
+    const user = result.user
+    const userDoc = await db.collection("users").doc(user.uid).get()
+    
+    if (userDoc.exists) {
+      // User already exists - check role and redirect
+      const userData = userDoc.data()
+      if (userData.role === "parent") {
+        showNotification("Welcome back, Parent!", "success")
+        showParentPinVerification()
+      } else if (userData.role === "child") {
+        showNotification("Welcome back!", "success")
+        navigateTo("child-dashboard.html")
+      }
+    } else {
+      // New user - need to determine role and complete profile
+      showGoogleRoleSelection(user)
+    }
+  } catch (error) {
+    console.error("[TaskQuest] Google Sign-In error:", error)
+    if (error.code === 'auth/popup-closed-by-user') {
+      showNotification("Sign-in cancelled", "error")
+    } else if (error.code === 'auth/popup-blocked') {
+      showNotification("Please allow popups for Google Sign-In", "error")
+    } else {
+      showNotification("Google Sign-In failed: " + error.message, "error")
+    }
+  }
+}
+
+function showGoogleRoleSelection(googleUser) {
+  // Create a modal to select role for new Google users
+  const modal = document.getElementById("loginModal")
+  const modalContent = modal.querySelector(".modal-content")
+  const originalContent = modalContent.innerHTML
+  
+  modalContent.innerHTML = `
+    <span class="close" onclick="closeLoginModal()">&times;</span>
+    <h2>Welcome to TaskQuest!</h2>
+    <p style="color: var(--text-secondary); margin: 20px 0;">Are you a Parent or a Child?</p>
+    <div style="display: flex; gap: 16px; flex-direction: column;">
+      <button type="button" class="login-btn parent-login" onclick="completeGoogleSignup('${googleUser.uid}', '${googleUser.displayName || googleUser.email}', 'parent', '${originalContent}')">
+        <span class="btn-icon">👨‍👩‍👧‍👦</span>
+        <span class="btn-text">I'm a Parent</span>
+      </button>
+      <button type="button" class="login-btn child-login" onclick="completeGoogleSignup('${googleUser.uid}', '${googleUser.displayName || googleUser.email}', 'child', '${originalContent}')">
+        <span class="btn-icon">🎮</span>
+        <span class="btn-text">I'm a Child</span>
+      </button>
+    </div>
+  `
+}
+
+async function completeGoogleSignup(uid, displayName, role, originalContent) {
+  try {
+    if (role === "parent") {
+      // Parent needs to create a family code
+      const passcode = prompt("Create a 6-digit PASSCODE for additional security (only you should know this):")
+      
+      if (!passcode || passcode.length !== 6 || isNaN(passcode)) {
+        showNotification("Invalid passcode. Please use exactly 6 digits.", "error")
+        return
+      }
+      
+      const familyCode = generateFamilyCode()
+      
+      await db.collection("users").doc(uid).set({
+        name: displayName,
+        email: auth.currentUser.email,
+        role: "parent",
+        passcode: passcode,
+        familyCode: familyCode,
+        authProvider: "google",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      })
+      
+      showNotification(`Welcome! Your Family Code is: ${familyCode} - Share this with your children!`, "success")
+      closeLoginModal()
+      showParentPinVerification()
+    } else {
+      // Child needs family code
+      const familyCode = prompt("Enter your Family Code (6 digits):")
+      
+      if (!familyCode || familyCode.length !== 6 || isNaN(familyCode)) {
+        showNotification("Invalid family code. Please get the code from your parent.", "error")
+        return
+      }
+      
+      const parentQuery = await db
+        .collection("users")
+        .where("familyCode", "==", familyCode)
+        .where("role", "==", "parent")
+        .get()
+      
+      if (parentQuery.empty) {
+        showNotification("Invalid family code. Please check with your parent.", "error")
+        return
+      }
+      
+      await db.collection("users").doc(uid).set({
+        name: displayName,
+        email: auth.currentUser.email,
+        role: "child",
+        points: 0,
+        familyCode: familyCode,
+        authProvider: "google",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      })
+      
+      showNotification("Welcome to TaskQuest!", "success")
+      closeLoginModal()
+      navigateTo("child-dashboard.html")
+    }
+  } catch (error) {
+    console.error("[TaskQuest] Google signup completion error:", error)
+    showNotification("Signup failed: " + error.message, "error")
   }
 }
 
