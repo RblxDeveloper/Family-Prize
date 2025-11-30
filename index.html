@@ -79,10 +79,18 @@
                     <div class="divider-or">
                         <span>OR</span>
                     </div>
-                    <button type="button" class="google-signin-btn" id="googleSignInBtn" onclick="signInWithGoogle()">
-                        <span class="google-icon">🔍</span>
-                        <span class="google-text">Sign in with Google</span>
-                    </button>
+                                        <button type="button" class="google-signin-btn" id="googleSignInBtn" onclick="signInWithGoogle()">
+                                                <span class="google-icon" aria-hidden="true">
+                                                    <!-- Simple Google G SVG -->
+                                                    <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" focusable="false">
+                                                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.24 1.53 8.12 2.79l6.02-6.02C35.87 2.34 30.25 0 24 0 14.73 0 6.93 5.53 3.05 13.52l7.95 6.16C12.94 14.03 18.99 9.5 24 9.5z"/>
+                                                        <path fill="#34A853" d="M46.5 24c0-1.6-.14-3.13-.4-4.61H24v9.13h12.77c-.55 2.95-2.14 5.45-4.57 7.14l7.04 5.46C43.74 37.02 46.5 31.9 46.5 24z"/>
+                                                        <path fill="#4A90E2" d="M10.99 29.68A14.97 14.97 0 0 1 9.5 24c0-1.08.17-2.12.48-3.12L2 14.72C.74 17.18 0 20.01 0 24c0 3.99.74 6.82 2 9.28l8.99-3.6z"/>
+                                                        <path fill="#FBBC05" d="M24 48c6.25 0 11.87-2.34 16.51-6.36l-7.95-6.46C30.24 36.92 27.54 38.5 24 38.5 18.99 38.5 12.94 33.97 10 28.08L2 34.68C6.93 42.47 14.73 48 24 48z"/>
+                                                    </svg>
+                                                </span>
+                                                <span class="google-text">Sign in with Google</span>
+                                        </button>
                     
                     <p class="toggle-auth" id="toggleAuth">
                         Don't have an account? <a href="#" onclick="toggleAuthMode(event)">Sign up</a>

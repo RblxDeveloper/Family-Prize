@@ -197,6 +197,22 @@ if (auth) {
       navigateTo('index.html')
     }
   })
+
+  // Handle redirect sign-in results (if user used redirect fallback)
+  try {
+    auth.getRedirectResult().then((result) => {
+      if (result && result.user) {
+        processGoogleSignInResult(result)
+      }
+    }).catch((err) => {
+      console.warn('[TaskQuest] getRedirectResult error:', err)
+      if (err && err.code === 'auth/unauthorized-domain') {
+        showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
+      }
+    })
+  } catch (e) {
+    console.warn('[TaskQuest] getRedirectResult not available or failed:', e)
+  }
 }
 
 // ==========================================
@@ -1004,34 +1020,66 @@ async function signInWithGoogle() {
     const googleProvider = new firebase.auth.GoogleAuthProvider()
     googleProvider.addScope('profile')
     googleProvider.addScope('email')
-    
-    const result = await auth.signInWithPopup(googleProvider)
-    const user = result.user
-    const userDoc = await db.collection("users").doc(user.uid).get()
-    
+
+    // Try popup first (better UX). If it fails (popup blocker), fall back to redirect.
+    try {
+      const result = await auth.signInWithPopup(googleProvider)
+      await processGoogleSignInResult(result)
+    } catch (popupErr) {
+      console.warn('[TaskQuest] Popup sign-in failed, falling back to redirect:', popupErr)
+      // Inform user about popup blockers in case that's the cause
+      if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
+        showNotification('Popup blocked or cancelled. Using redirect sign-in as a fallback.', 'warning')
+      }
+      // For some errors (unauthorized-domain) redirect won't fix the problem, but we still attempt
+      // redirect because it may work where popup was blocked.
+      try {
+        await auth.signInWithRedirect(googleProvider)
+      } catch (redirectErr) {
+        console.error('[TaskQuest] Redirect sign-in also failed:', redirectErr)
+        if (redirectErr.code === 'auth/unauthorized-domain') {
+          showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
+        } else {
+          showNotification('Google Sign-In failed: ' + redirectErr.message, 'error')
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[TaskQuest] Google Sign-In error:", error)
+    if (error.code === 'auth/popup-closed-by-user') {
+      showNotification('Sign-in cancelled', 'error')
+    } else if (error.code === 'auth/popup-blocked') {
+      showNotification('Please allow popups for Google Sign-In', 'error')
+    } else if (error.code === 'auth/unauthorized-domain') {
+      showNotification('Unauthorized domain. Add your domain under Firebase Console → Auth → Authorized domains.', 'error')
+    } else {
+      showNotification('Google Sign-In failed: ' + error.message, 'error')
+    }
+  }
+}
+
+// Centralized processing for a Google sign-in result (popup or redirect)
+async function processGoogleSignInResult(result) {
+  if (!result || !result.user) return
+  const user = result.user
+  try {
+    const userDoc = await db.collection('users').doc(user.uid).get()
     if (userDoc.exists) {
-      // User already exists - check role and redirect
       const userData = userDoc.data()
-      if (userData.role === "parent") {
-        showNotification("Welcome back, Parent!", "success")
+      if (userData.role === 'parent') {
+        showNotification('Welcome back, Parent!', 'success')
         showParentPinVerification()
-      } else if (userData.role === "child") {
-        showNotification("Welcome back!", "success")
-        navigateTo("child-dashboard.html")
+      } else if (userData.role === 'child') {
+        showNotification('Welcome back!', 'success')
+        navigateTo('child-dashboard.html')
       }
     } else {
       // New user - need to determine role and complete profile
       showGoogleRoleSelection(user)
     }
-  } catch (error) {
-    console.error("[TaskQuest] Google Sign-In error:", error)
-    if (error.code === 'auth/popup-closed-by-user') {
-      showNotification("Sign-in cancelled", "error")
-    } else if (error.code === 'auth/popup-blocked') {
-      showNotification("Please allow popups for Google Sign-In", "error")
-    } else {
-      showNotification("Google Sign-In failed: " + error.message, "error")
-    }
+  } catch (err) {
+    console.error('[TaskQuest] Failed processing Google sign-in result:', err)
+    showNotification('Sign-in succeeded but processing failed: ' + err.message, 'error')
   }
 }
 
