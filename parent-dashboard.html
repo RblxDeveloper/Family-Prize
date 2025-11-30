@@ -16,94 +16,87 @@
             <span>TaskQuest</span>
         </div>
         <div class="nav-links">
-            <a href="#dashboard" class="nav-link" onclick="navigateToSection('dashboard'); return false;">Dashboard</a>
             <a href="#approvals" class="nav-link active" onclick="navigateToSection('approvals'); return false;">Approvals</a>
-            <a href="#children" class="nav-link" onclick="navigateToSection('children'); return false;">Children</a>
-            <a href="#tasks" class="nav-link" onclick="navigateToSection('tasks'); return false;">Tasks</a>
-            <a href="#rewards" class="nav-link" onclick="navigateToSection('rewards'); return false;">Rewards</a>
-            <a href="#passcode" class="nav-link" onclick="navigateToSection('passcode'); return false;">Settings</a>
+            <a href="#manage" class="nav-link" onclick="navigateToSection('manage'); return false;">Manage</a>
+            <a href="#settings" class="nav-link" onclick="navigateToSection('settings'); return false;">Settings</a>
         </div>
         <button class="logout-btn" onclick="logout()">Logout</button>
     </nav>
 
     <main class="dashboard-container">
-        <!-- Dashboard Section -->
-        <section id="dashboard-section" class="dashboard-section">
-            <h2 class="section-title">Dashboard</h2>
-            <!-- Placeholder for dashboard content -->
-            <div class="dashboard-content">
-                <p>Welcome to your TaskQuest dashboard!</p>
-            </div>
-        </section>
-
-        <!-- Pending Verifications Section -->
+        <!-- Approvals Section (Dashboard + Pending + On-Going consolidated) -->
         <section id="approvals-section" class="dashboard-section">
-            <h2 class="section-title">Pending Verifications</h2>
-            <div class="pending-tasks-grid" id="pendingTasksGrid">
-                <p>Loading pending tasks...</p>
+            <h2 class="section-title">Task Approvals</h2>
+            
+            <!-- Pending Verifications -->
+            <div class="subsection">
+                <h3 class="subsection-title">Pending Verification 📸</h3>
+                <div class="pending-tasks-grid" id="pendingTasksGrid">
+                    <p>Loading pending tasks...</p>
+                </div>
+            </div>
+
+            <!-- On-Going Tasks -->
+            <div class="subsection">
+                <h3 class="subsection-title">In Progress 🏃</h3>
+                <div class="pending-tasks-grid" id="ongoingTasksGrid">
+                    <p>No on-going tasks at the moment.</p>
+                </div>
             </div>
         </section>
 
-        <!-- On-Going Tasks Section -->
-        <section id="ongoing-section" class="dashboard-section">
-            <h2 class="section-title">On-Going Tasks 🏃</h2>
-            <div class="pending-tasks-grid" id="ongoingTasksGrid">
-                <p>No on-going tasks at the moment.</p>
+        <!-- Manage Section (Tasks + Rewards + Children consolidated) -->
+        <section id="manage-section" class="dashboard-section" style="display: none;">
+            <!-- Create Task Templates Sub-section -->
+            <div class="subsection">
+                <div class="section-header">
+                    <h3 class="subsection-title">Task Templates</h3>
+                    <button class="primary-btn" onclick="openCreateTaskModal()">+ Create Task</button>
+                </div>
+                <div class="tasks-grid" id="tasksGrid">
+                    <p>Loading tasks...</p>
+                </div>
+            </div>
+
+            <!-- Rewards Management Sub-section -->
+            <div class="subsection">
+                <div class="section-header">
+                    <h3 class="subsection-title">Rewards</h3>
+                    <button class="primary-btn" onclick="openAddRewardModal()">+ Add Reward</button>
+                </div>
+                <div class="rewards-grid" id="rewardsGrid">
+                    <p>Loading rewards...</p>
+                </div>
+            </div>
+
+            <!-- Children Profiles Sub-section -->
+            <div class="subsection">
+                <h3 class="subsection-title">Children Profiles</h3>
+                <div class="children-grid" id="childrenGrid">
+                    <p>Loading children profiles...</p>
+                </div>
             </div>
         </section>
 
-        <!-- Children Profiles Section -->
-        <section id="children-section" class="dashboard-section" style="display: none;">
-            <h2 class="section-title">Children Profiles</h2>
-            <div class="children-grid" id="childrenGrid">
-                <p>Loading children profiles...</p>
-            </div>
-        </section>
-
-        <!-- Create Task Templates Section -->
-        <section id="tasks-section" class="dashboard-section" style="display: none;">
-            <div class="section-header">
-                <h2 class="section-title">Task Templates</h2>
-                <button class="primary-btn" onclick="openCreateTaskModal()">+ Create New Task</button>
-            </div>
-            <div class="tasks-grid" id="tasksGrid">
-                <p>Loading tasks...</p>
-            </div>
-        </section>
-
-        <!-- Rewards Management Section -->
-        <section id="rewards-section" class="dashboard-section" style="display: none;">
-            <div class="section-header">
-                <h2 class="section-title">Rewards Management</h2>
-                <button class="primary-btn" onclick="openAddRewardModal()">+ Add Reward</button>
-            </div>
-            <div class="rewards-grid" id="rewardsGrid">
-                <p>Loading rewards...</p>
-            </div>
-        </section>
-
-        <!-- Passcode Management Section -->
-        <section id="passcode-section" class="dashboard-section" style="display: none;">
+        <!-- Settings Section -->
+        <section id="settings-section" class="dashboard-section" style="display: none;">
             <h2 class="section-title">Settings</h2>
-            <div class="passcode-management">
-                <div class="passcode-card">
-                    <div class="passcode-icon">🔐</div>
-                    <h3>Your 6-Digit Passcode</h3>
-                    <p>This passcode protects your parent dashboard from unauthorized access.</p>
-                    <p class="passcode-hint">Only you should know this passcode. Children cannot access the parent dashboard without it.</p>
-                    <button class="primary-btn" onclick="changePasscode()">Change Passcode</button>
+            <div class="settings-grid">
+                <div class="settings-card">
+                    <div class="settings-icon">🔐</div>
+                    <h3>Change Passcode</h3>
+                    <p>Update your 6-digit dashboard protection code.</p>
+                    <button class="secondary-btn" onclick="changePasscode()">Change</button>
                 </div>
                 
-                <div class="passcode-card">
-                    <div class="passcode-icon">👨‍👩‍👧‍👦</div>
-                    <h3>Your Family Code</h3>
-                    <p>Share this code with your children so they can join your family and see the tasks you create.</p>
+                <div class="settings-card">
+                    <div class="settings-icon">👨‍👩‍👧‍👦</div>
+                    <h3>Family Code</h3>
+                    <p>Share this code with your children to link their accounts.</p>
                     <div class="family-code-display">
-                        <span class="code-label">Family Code:</span>
                         <span class="code-value" id="familyCodeDisplay">------</span>
-                        <button class="copy-code-btn" onclick="copyFamilyCode()">📋 Copy Code</button>
+                        <button class="copy-code-btn" onclick="copyFamilyCode()">📋 Copy</button>
                     </div>
-                    <p class="passcode-hint">Each child must enter this code when they sign up to link their account to yours.</p>
                 </div>
             </div>
         </section>

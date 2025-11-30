@@ -250,6 +250,27 @@ body {
   margin-bottom: 24px;
 }
 
+/* Subsection styling for consolidated sections */
+.subsection {
+  margin-bottom: 40px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+}
+
+.subsection:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.subsection-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
 /* Minimalist button styles - solid colors, no gradients */
 .primary-btn {
   padding: 10px 20px;
@@ -342,6 +363,46 @@ body {
   border-radius: 12px;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* Settings Grid */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+}
+
+.settings-card {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  transition: var(--transition);
+}
+
+.settings-card:hover {
+  border-color: var(--border-dark);
+  box-shadow: var(--shadow);
+}
+
+.settings-icon {
+  font-size: 40px;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.settings-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  letter-spacing: -0.2px;
+}
+
+.settings-card p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.6;
 }
 
 .child-info {

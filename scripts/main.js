@@ -1254,13 +1254,17 @@ function navigateToSection(target) {
       loadPendingApprovals()
       loadOngoingTasks()
       break
-    case "children":
-      const childrenSection = document.getElementById("children-section")
-      if (childrenSection) childrenSection.style.display = "block"
+    case "manage":
+      const manageSection = document.getElementById("manage-section")
+      if (manageSection) manageSection.style.display = "block"
+      loadParentTasks()
+      loadParentRewards()
+      loadChildren()
       break
-    case "passcode":
-      const passcodeSection = document.getElementById("passcode-section")
-      if (passcodeSection) passcodeSection.style.display = "block"
+    case "settings":
+      const settingsSection = document.getElementById("settings-section")
+      if (settingsSection) settingsSection.style.display = "block"
+      displayFamilyCode()
       break
     default:
       const section = document.getElementById(`${target}-section`)
@@ -1377,6 +1381,17 @@ async function loadAvailableTasks() {
       approvedTaskIds.add(doc.data().taskId)
     })
 
+    // Get declined submissions for this user (so we can reset button to Start)
+    const declinedSnapshot = await db.collection("submissions")
+      .where("userId", "==", user.uid)
+      .where("status", "==", "declined")
+      .get()
+
+    const declinedTaskIds = new Set()
+    declinedSnapshot.forEach((doc) => {
+      declinedTaskIds.add(doc.data().taskId)
+    })
+
     tasksGrid.innerHTML = ""
 
     tasksSnapshot.forEach((doc) => {
@@ -1384,6 +1399,7 @@ async function loadAvailableTasks() {
       const taskId = doc.id
       const isInProgress = inProgressTaskIds.has(taskId)
       const isApproved = approvedTaskIds.has(taskId)
+      const isDeclined = declinedTaskIds.has(taskId)
       const inProgressByOther = inProgressByOthers[taskId]
 
       // Skip tasks that this child has already completed and approved
@@ -1395,7 +1411,7 @@ async function loadAvailableTasks() {
       let buttonHtml = ''
       if (inProgressByOther) {
         buttonHtml = `<span class="in-progress-status">⏳ In progress by ${inProgressByOther}</span>`
-      } else if (isInProgress) {
+      } else if (isInProgress && !isDeclined) {
         buttonHtml = `<button class="finish-task-btn" onclick="finishTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')">⏳ Finish Task</button>`
       } else {
         buttonHtml = `<button class="start-task-btn" onclick="startTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')">Start Task</button>`
