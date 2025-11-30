@@ -108,65 +108,7 @@ function showToast(message, type = 'success', duration = 4000) {
     `
     document.body.appendChild(container)
   }
-
-  const toast = document.createElement('div')
-  const bgColor = type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#2196F3'
-  const borderColor = type === 'success' ? '#45a049' : type === 'error' ? '#da190b' : type === 'warning' ? '#e68900' : '#0b7dda'
-  
-  toast.style.cssText = `
-    background-color: ${bgColor};
-    color: white;
-    padding: 16px 24px;
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    font-size: 14px;
-    font-weight: 500;
-    min-width: 300px;
-    border-left: 4px solid ${borderColor};
-    animation: slideIn 0.3s ease-out;
-    pointer-events: auto;
-    cursor: pointer;
-  `
-  toast.textContent = message
-  
-  container.appendChild(toast)
-  
-  const dismissTimer = setTimeout(() => {
-    toast.style.animation = 'slideOut 0.3s ease-out'
-    setTimeout(() => toast.remove(), 300)
-  }, duration)
-  
-  toast.addEventListener('click', () => {
-    clearTimeout(dismissTimer)
-    toast.style.animation = 'slideOut 0.3s ease-out'
-    setTimeout(() => toast.remove(), 300)
-  })
-}
-
-// Add CSS animations
-if (!document.getElementById('toastStyles')) {
-  const style = document.createElement('style')
-  style.id = 'toastStyles'
-  style.textContent = `
-    @keyframes slideIn {
-      from { transform: translateX(400px); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(400px); opacity: 0; }
-    }
-  `
-  document.head.appendChild(style)
-}
-
-function navigateTo(page) {
-  const base = getBasePath()
-  const url = base + '/' + page
-  console.log('[TaskQuest] navigateTo:', page, '-> full URL:', url)
-  window.location.href = url
-}
-
+  }
 // ==========================================
 // SESSION & AUTH STATE MANAGEMENT
 // ==========================================
@@ -2661,51 +2603,41 @@ async function setFamilyCodeForChild() {
       return
     }
 
-    console.log('[TaskQuest] Looking up parent with family code:', code)
-    
-    // Find the parent with this family code
-    const parentQuery = await db
-      .collection("users")
-      .where("familyCode", "==", code)
-      .where("role", "==", "parent")
-      .limit(1)
-      .get()
+    // Do NOT attempt to read the users collection here — rules can block that.
+    // Instead create a familyRequests doc with the provided code; parents will
+    // filter by familyCode to find pending requests and approve/decline them.
+    const childNameDisplay = user.displayName || (user.email ? user.email.split('@')[0] : 'Child')
+    try {
+      const requestRef = await db.collection("familyRequests").add({
+        childId: user.uid,
+        childName: childNameDisplay,
+        childEmail: user.email || null,
+        parentId: null,
+        parentName: null,
+        familyCode: code,
+        status: "pending",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        respondedAt: null,
+      })
 
-    if (parentQuery.empty) {
-      showNotification("Invalid family code. Please check with your parent.", "error")
-      return
+      console.log('[TaskQuest] Family request created (no parent lookup):', requestRef.id)
+      showNotification("Request sent! Waiting for parent approval...", "success")
+      input.value = ""
+
+      // Refresh to show pending status
+      setTimeout(() => loadChildProfile(), 1000)
+    } catch (createErr) {
+      console.error('[TaskQuest] Failed to create family request:', createErr)
+      throw createErr
     }
-
-    const parentDoc = parentQuery.docs[0]
-    const parentData = parentDoc.data()
-
-    console.log('[TaskQuest] Found parent, creating family request...')
-    
-    // Create a family request that needs parent approval
-    // Use email as child name if we can't read the profile yet
-    const childNameDisplay = user.displayName || user.email.split('@')[0] || 'Child'
-    
-    const requestRef = await db.collection("familyRequests").add({
-      childId: user.uid,
-      childName: childNameDisplay,
-      childEmail: user.email,
-      parentId: parentDoc.id,
-      parentName: parentData.name,
-      familyCode: code,
-      status: "pending",
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      respondedAt: null,
-    })
-
-    console.log('[TaskQuest] Family request created:', requestRef.id)
-    showNotification("Request sent! Waiting for parent approval...", "success")
-    input.value = ""
-    
-    // Refresh to show pending status
-    setTimeout(() => loadChildProfile(), 1000)
   } catch (error) {
     console.error("[TaskQuest] setFamilyCodeForChild error:", error)
-    await handleFirestoreError(error, document.getElementById("childFamilyLinkCard"))
+    const msg = error?.message || String(error)
+    if (msg.includes('Missing or insufficient permissions')) {
+      showNotification('Permission denied. Your Firestore rules may need to be updated. Contact your parent.', 'error')
+    } else {
+      await handleFirestoreError(error, document.getElementById("childFamilyLinkCard"))
+    }
   }
 }
 
