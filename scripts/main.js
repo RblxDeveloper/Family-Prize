@@ -20,6 +20,8 @@ const firebaseConfig = {
 
 // Declare the firebase variable
 let db, storage, auth
+// Unsubscribe handle for child profile realtime watcher
+let childProfileUnsubscribe = null
 
 // Feature flag: disable Firebase Storage uploads when running on GitHub Pages
 // or when Firebase Storage CORS isn't configured. Set to true to re-enable.
@@ -173,6 +175,25 @@ if (auth) {
     // Check if this tab was explicitly logged out
     if (sessionStorage.getItem('loggedOut') === 'true') {
       return // Don't restore session for this tab
+    }
+    
+    // If user exists, check if their account has been disabled by a parent
+    if (user) {
+      db.collection('users').doc(user.uid).get().then((doc) => {
+        if (doc.exists) {
+          const data = doc.data()
+          if (data.disabled === true && data.role === 'child') {
+            showNotification('This account has been disabled by a parent. You have been signed out.', 'error')
+            // Force sign out for disabled child accounts
+            auth.signOut().then(() => {
+              sessionStorage.setItem('loggedOut', 'true')
+              navigateTo('index.html')
+            }).catch((e) => console.warn('[TaskQuest] Sign-out after disable failed:', e))
+          }
+        }
+      }).catch((err) => {
+        console.warn('[TaskQuest] Could not verify disabled status:', err)
+      })
     }
     
     // If user is logged in and we're on the login page, redirect
@@ -914,6 +935,59 @@ async function sendRewardNotification(childId) {
   } catch (error) {
     console.error("[TaskQuest] Send notification error:", error)
     showNotification("Failed to send notification: " + error.message, "error")
+  }
+}
+
+// Parent management actions
+async function unlinkChild(childId) {
+  if (!confirm("Are you sure you want to unlink this child from your family? They will need to re-request linking.")) return
+  try {
+    await db.collection('users').doc(childId).update({
+      familyCode: null,
+    })
+    showNotification('Child unlinked from family.', 'success')
+    setTimeout(() => loadChildren(), 800)
+  } catch (err) {
+    console.error('[TaskQuest] Unlink child error:', err)
+    showNotification('Failed to unlink child: ' + err.message, 'error')
+  }
+}
+
+async function deactivateChild(childId) {
+  if (!confirm("Deactivate this child account? They will be signed out and unable to use the app until reactivated.")) return
+  try {
+    await db.collection('users').doc(childId).update({
+      disabled: true,
+    })
+    showNotification('Child account deactivated.', 'success')
+    setTimeout(() => loadChildren(), 800)
+  } catch (err) {
+    console.error('[TaskQuest] Deactivate child error:', err)
+    showNotification('Failed to deactivate child: ' + err.message, 'error')
+  }
+}
+
+function editChildNamePrompt(childId, currentName) {
+  const newName = prompt('Enter new name for child:', currentName || '')
+  if (newName === null) return // cancelled
+  const trimmed = String(newName).trim()
+  if (!trimmed) {
+    showNotification('Name cannot be empty.', 'error')
+    return
+  }
+  editChildName(childId, trimmed)
+}
+
+async function editChildName(childId, newName) {
+  try {
+    await db.collection('users').doc(childId).update({
+      name: newName,
+    })
+    showNotification('Child name updated.', 'success')
+    setTimeout(() => loadChildren(), 800)
+  } catch (err) {
+    console.error('[TaskQuest] Edit child name error:', err)
+    showNotification('Failed to update name: ' + err.message, 'error')
   }
 }
 
@@ -1919,10 +1993,13 @@ async function loadChildren() {
             <span class="stat-value">${pendingCount}</span>
           </div>
         </div>
-        <div class="child-actions">
-          <button class="secondary-btn" onclick="resetPoints('${doc.id}')">Reset Points</button>
-          <button class="primary-btn" onclick="addBonusPoints('${doc.id}')">Add Bonus</button>
-        </div>
+          <div class="child-actions">
+            <button class="secondary-btn" onclick="resetPoints('${doc.id}')">Reset Points</button>
+            <button class="primary-btn" onclick="addBonusPoints('${doc.id}')">Add Bonus</button>
+            <button class="secondary-btn" onclick="unlinkChild('${doc.id}')">Unlink</button>
+            <button class="secondary-btn" onclick="deactivateChild('${doc.id}')">Deactivate</button>
+            <button class="secondary-btn" onclick="editChildNamePrompt('${doc.id}', '${child.name.replace(/'/g, "\\'")}')">Edit Name</button>
+          </div>
       `
       childrenGrid.appendChild(childCard)
     }
@@ -2147,6 +2224,25 @@ async function loadChildProfile() {
     if (!userDoc.exists) return
 
     const userData = userDoc.data()
+
+    // Set up a realtime watcher so parent deactivation takes effect immediately
+    try {
+      if (childProfileUnsubscribe) {
+        try { childProfileUnsubscribe(); } catch(e){}
+        childProfileUnsubscribe = null
+      }
+      childProfileUnsubscribe = db.collection('users').doc(user.uid).onSnapshot((snap) => {
+        if (!snap.exists) return
+        const d = snap.data()
+        if (d.disabled === true && d.role === 'child') {
+          showNotification('Your account has been disabled by a parent. You will be signed out.', 'error')
+          auth.signOut().then(() => navigateTo('index.html')).catch(() => {})
+        }
+      })
+    } catch (watchErr) {
+      // Not critical — continue without watcher
+      console.warn('[TaskQuest] Could not attach child profile watcher:', watchErr)
+    }
 
     // Update profile header
     const profileName = document.getElementById("profileName")
