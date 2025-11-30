@@ -33,8 +33,12 @@ service cloud.firestore {
     
     // Users collection
     match /users/{userId} {
-      // Create: authenticated users can create their own profile document
-      allow create: if isSignedIn() && request.auth.uid == userId;
+      // Create: authenticated users can create their own profile document (for signup)
+      // Also allow if document doesn't exist yet (new user) and request has required fields
+      allow create: if isSignedIn() && request.auth.uid == userId && 
+                       request.resource.data.email != null && 
+                       request.resource.data.name != null && 
+                       request.resource.data.role != null;
 
       // Read: allow owners to read their profile; allow parents/children to read users in their family;
       // allow public reads for parent profiles (single-doc 'get' only) to assist family-code lookup.

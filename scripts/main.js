@@ -325,20 +325,34 @@ async function signupAsParent() {
 
     const familyCode = generateFamilyCode()
 
-    // Store user data in Firestore
-    await db.collection("users").doc(user.uid).set({
-      name: name,
-      email: email,
-      role: "parent",
-      passcode: passcode,
-      familyCode: familyCode,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    })
+    // Store user data in Firestore with error handling
+    try {
+      await db.collection("users").doc(user.uid).set({
+        name: name,
+        email: email,
+        role: "parent",
+        passcode: passcode,
+        familyCode: familyCode,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      })
+    } catch (dbError) {
+      console.error("[TaskQuest] Firestore write error:", dbError)
+      // If Firestore fails, delete the auth account to keep things in sync
+      await user.delete().catch(e => console.warn("Could not delete auth user", e))
+      
+      if (dbError.code === "permission-denied") {
+        showNotification("Database setup incomplete. Please publish Firestore rules in Firebase Console.", "error")
+      } else {
+        showNotification("Signup failed: " + dbError.message, "error")
+      }
+      return
+    }
 
     showNotification(`Account created! Your Family Code is: ${familyCode} - Share this with your children!`, "success")
+    closeLoginModal()
     setTimeout(() => {
       navigateTo("parent-dashboard.html")
-    }, 3000)
+    }, 1500)
   } catch (error) {
     console.error("[TaskQuest] Parent signup error:", error)
     if (error.code === "auth/email-already-in-use") {
@@ -391,16 +405,31 @@ async function signupAsChild() {
     const userCredential = await auth.createUserWithEmailAndPassword(email, password)
     const user = userCredential.user
 
-    await db.collection("users").doc(user.uid).set({
-      name: name,
-      email: email,
-      role: "child",
-      points: 0,
-      familyCode: familyCode,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    })
+    // Store user data in Firestore with error handling
+    try {
+      await db.collection("users").doc(user.uid).set({
+        name: name,
+        email: email,
+        role: "child",
+        points: 0,
+        familyCode: familyCode,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      })
+    } catch (dbError) {
+      console.error("[TaskQuest] Firestore write error:", dbError)
+      // If Firestore fails, delete the auth account to keep things in sync
+      await user.delete().catch(e => console.warn("Could not delete auth user", e))
+      
+      if (dbError.code === "permission-denied") {
+        showNotification("Database setup incomplete. Please publish Firestore rules in Firebase Console.", "error")
+      } else {
+        showNotification("Signup failed: " + dbError.message, "error")
+      }
+      return
+    }
 
     showNotification("Account created successfully! Welcome to TaskQuest!", "success")
+    closeLoginModal()
     setTimeout(() => {
       navigateTo("child-dashboard.html")
     }, 1500)
