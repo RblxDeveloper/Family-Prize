@@ -2760,9 +2760,21 @@ async function loadPendingFamilyRequests() {
     const user = auth.currentUser
     if (!user) return
 
+    // Get parent's family code first
+    const parentDoc = await db.collection("users").doc(user.uid).get()
+    if (!parentDoc.exists) return
+    
+    const parentFamilyCode = parentDoc.data().familyCode
+    if (!parentFamilyCode) {
+      const container = document.getElementById("pendingFamilyRequests")
+      if (container) container.innerHTML = '<div class="empty-state"><p>No pending family requests</p></div>'
+      return
+    }
+
+    // Query requests by the parent's family code and pending status
     const requests = await db
       .collection("familyRequests")
-      .where("parentId", "==", user.uid)
+      .where("familyCode", "==", parentFamilyCode)
       .where("status", "==", "pending")
       .get()
 
