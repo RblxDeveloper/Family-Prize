@@ -2075,9 +2075,23 @@ async function loadActivityHistory() {
     // Process submissions
     for (const doc of submissionsSnapshot.docs) {
       const submission = doc.data()
-      const taskDoc = await db.collection("taskTemplates").doc(submission.taskId).get()
-      const taskName = taskDoc.exists ? taskDoc.data().title : submission.taskTitle || "Unknown Task"
-      const points = taskDoc.exists ? taskDoc.data().points : 0
+      // Defensive: some submissions may not have taskId (older/partial docs)
+      let taskName = submission.taskTitle || "Unknown Task"
+      let points = 0
+      if (submission.taskId) {
+        try {
+          const taskDoc = await db.collection("taskTemplates").doc(submission.taskId).get()
+          if (taskDoc.exists) {
+            taskName = taskDoc.data().title || taskName
+            points = taskDoc.data().points || 0
+          }
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to load task template for activity history:', e)
+          // don't throw — show the submission using fallback data
+        }
+      } else {
+        console.warn('[TaskQuest] Submission missing taskId, using fallback title:', doc.id)
+      }
 
       activities.push({
         type: submission.status,
@@ -2159,8 +2173,12 @@ async function loadActivityHistory() {
   } catch (error) {
     console.error("[TaskQuest] Load activity history error:", error)
     const activityList = document.getElementById("activityList")
-    if (activityList) {
-      activityList.innerHTML = "<p>Error loading activity history.</p>"
+    // Use centralized Firestore error handler to provide actionable guidance (indexes / rules)
+    try {
+      await handleFirestoreError(error, activityList)
+    } catch (handlerErr) {
+      console.error('[TaskQuest] Error while handling Firestore error:', handlerErr)
+      if (activityList) activityList.innerHTML = "<p>Error loading activity history.</p>"
     }
   }
 }
