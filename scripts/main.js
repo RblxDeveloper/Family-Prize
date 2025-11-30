@@ -2661,6 +2661,8 @@ async function setFamilyCodeForChild() {
       return
     }
 
+    console.log('[TaskQuest] Looking up parent with family code:', code)
+    
     // Find the parent with this family code
     const parentQuery = await db
       .collection("users")
@@ -2677,19 +2679,25 @@ async function setFamilyCodeForChild() {
     const parentDoc = parentQuery.docs[0]
     const parentData = parentDoc.data()
 
+    console.log('[TaskQuest] Found parent, creating family request...')
+    
     // Create a family request that needs parent approval
+    // Use email as child name if we can't read the profile yet
+    const childNameDisplay = user.displayName || user.email.split('@')[0] || 'Child'
+    
     const requestRef = await db.collection("familyRequests").add({
       childId: user.uid,
-      childName: (await db.collection("users").doc(user.uid).get()).data().name,
+      childName: childNameDisplay,
       childEmail: user.email,
       parentId: parentDoc.id,
       parentName: parentData.name,
       familyCode: code,
-      status: "pending", // pending, approved, or declined
+      status: "pending",
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       respondedAt: null,
     })
 
+    console.log('[TaskQuest] Family request created:', requestRef.id)
     showNotification("Request sent! Waiting for parent approval...", "success")
     input.value = ""
     
