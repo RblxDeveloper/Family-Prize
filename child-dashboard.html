@@ -17,7 +17,6 @@
         </div>
         <div class="nav-links">
             <a href="#tasks" class="nav-link active" onclick="navigateToSection('tasks'); return false;">Tasks</a>
-            <a href="#upload" class="nav-link" onclick="navigateToSection('upload'); return false;">Upload</a>
             <a href="#rewards" class="nav-link" onclick="navigateToSection('rewards'); return false;">Rewards</a>
             <a href="#profile" class="nav-link" onclick="navigateToSection('profile'); return false;">Profile</a>
         </div>
@@ -25,75 +24,85 @@
     </nav>
 
     <main class="child-dashboard-container">
-        <!-- Points Display -->
-        <section class="points-hero">
+        <!-- Points Hero Card -->
+        <div class="points-hero-section">
             <div class="points-card">
-                <div class="points-label">Your Points</div>
-                <!-- Points will now be loaded dynamically from Firebase -->
-                <div class="points-value" id="points-value">0</div>
-                <div class="points-subtitle">Keep going! You're doing great! 🌟</div>
+                <div class="points-icon">⭐</div>
+                <div class="points-content">
+                    <div class="points-label">Your Points</div>
+                    <div class="points-value" id="points-value">0</div>
+                </div>
             </div>
-        </section>
+            <p class="points-subtitle">Complete tasks to earn rewards!</p>
+        </div>
 
-        <!-- Available Tasks -->
+        <!-- Available Tasks Section -->
         <section id="tasks-section" class="child-section">
-            <h2 class="section-title">Available Tasks</h2>
-            <!-- Grid will be populated dynamically from Firebase -->
+            <div class="section-header">
+                <h2 class="section-title">📋 Available Tasks</h2>
+            </div>
             <div class="child-tasks-grid" id="childTasksGrid">
                 <p>Loading tasks...</p>
             </div>
         </section>
 
-        <!-- Rewards Store -->
+        <!-- Rewards Store Section -->
         <section id="rewards-section" class="child-section" style="display: none;">
-            <h2 class="section-title">Rewards Store</h2>
-            <!-- Grid will be populated dynamically from Firebase -->
+            <div class="section-header">
+                <h2 class="section-title">🎁 Rewards Store</h2>
+            </div>
             <div class="rewards-store-grid" id="rewardsStoreGrid">
                 <p>Loading rewards...</p>
             </div>
         </section>
 
-        <!-- Activity History -->
+        <!-- Profile & Activity Section -->
         <section id="profile-section" class="child-section" style="display: none;">
-            <h2 class="section-title">My Profile</h2>
-            <!-- Added profile information display -->
-            <div class="profile-container">
-                <div class="profile-header">
-                    <div class="profile-avatar">👤</div>
-                    <h3 id="profileName">Loading...</h3>
-                    <p id="profileEmail">Loading...</p>
-                </div>
-                <div class="profile-stats">
-                    <div class="stat-card">
-                        <span class="stat-number" id="totalPoints">0</span>
-                        <span class="stat-label">Total Points Earned</span>
+            <div class="profile-wrapper">
+                <!-- Profile Card -->
+                <div class="profile-card">
+                    <div class="profile-header">
+                        <div class="profile-avatar">👤</div>
+                        <div class="profile-info">
+                            <h3 id="profileName">Loading...</h3>
+                            <p id="profileEmail">Loading...</p>
+                        </div>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-number" id="completedTasks">0</span>
-                        <span class="stat-label">Completed Tasks</span>
+
+                    <!-- Quick Stats -->
+                    <div class="profile-stats">
+                        <div class="stat-box">
+                            <div class="stat-value" id="totalPoints">0</div>
+                            <div class="stat-label">Total Points</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="completedTasks">0</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="rewardsRedeemed">0</div>
+                            <div class="stat-label">Rewards</div>
+                        </div>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-number" id="rewardsRedeemed">0</span>
-                        <span class="stat-label">Rewards Redeemed</span>
+
+                    <!-- Family Link Section -->
+                    <div class="family-section">
+                        <h4>👨‍👩‍👧 Family Connection</h4>
+                        <p id="linkedParentInfo">Not linked to a family yet.</p>
+                        <div class="family-code-input-row">
+                            <input type="text" id="childFamilyCodeInput" placeholder="Enter 6-digit family code">
+                            <button class="primary-btn" onclick="setFamilyCodeForChild()">Link</button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Family code linking for children -->
-                <div class="family-link-card" id="childFamilyLinkCard" style="margin-top:1rem;">
-                    <h4>Link to Parent</h4>
-                    <p id="linkedParentInfo">Not linked to a family yet.</p>
-                    <div class="family-code-input-row">
-                        <input type="text" id="childFamilyCodeInput" placeholder="Enter parent's 6-digit family code">
-                        <button class="primary-btn" onclick="setFamilyCodeForChild()">Link</button>
+                <!-- Activity History -->
+                <div class="activity-section">
+                    <h3 class="section-title">📈 Activity History</h3>
+                    <div class="activity-list" id="activityList">
+                        <p>Loading activity history...</p>
                     </div>
-                    <p class="hint">Ask your parent for their Family Code and paste it here.</p>
                 </div>
-            </div>
-
-            <h2 class="section-title" style="margin-top: 2rem;">Activity History</h2>
-            <!-- Activity list will be populated dynamically -->
-            <div class="activity-list" id="activityList">
-                <p>Loading activity history...</p>
             </div>
         </section>
     </main>
@@ -102,8 +111,8 @@
     <div id="uploadModal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeUploadModal()">&times;</span>
-            <h2>Upload Task Photos</h2>
-            <p class="modal-subtitle" id="uploadTaskTitle">Complete your task</p>
+            <h2>📸 Complete Task</h2>
+            <p class="modal-subtitle" id="uploadTaskTitle">Take your before & after photos</p>
             <div class="upload-section">
                 <div class="upload-step">
                     <h3>Step 1: Before Photo</h3>
@@ -130,7 +139,7 @@
                 </div>
             </div>
 
-            <button class="submit-btn" onclick="submitTaskForReview()">Submit for Review</button>
+            <button class="submit-btn" onclick="submitTaskForReview()">✅ Submit for Review</button>
         </div>
     </div>
 
