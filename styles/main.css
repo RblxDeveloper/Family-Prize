@@ -935,75 +935,93 @@ body {
 .activity-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .activity-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
-  background: var(--surface);
-  padding: 16px;
-  border-radius: var(--radius);
+  background: var(--background);
+  padding: 20px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  border-left-width: 3px;
+  border-left-width: 4px;
+  transition: var(--transition);
+}
+
+.activity-item:hover {
+  box-shadow: var(--shadow-sm);
 }
 
 .activity-item.completed {
-  border-left-color: var(--text-primary);
+  border-left-color: #10b981;
+  background: rgba(16, 185, 129, 0.05);
 }
 
 .activity-item.pending {
-  border-left-color: var(--secondary);
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
 }
 
 .activity-item.declined {
-  border-left-color: var(--text-muted);
+  border-left-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
 }
 
 .activity-item.reward {
-  border-left-color: var(--text-primary);
+  border-left-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.05);
 }
 
 .activity-icon {
-  font-size: 28px;
+  font-size: 32px;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .activity-details {
   flex: 1;
+  min-width: 0;
 }
 
 .activity-details h4 {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 6px;
   letter-spacing: -0.2px;
+  color: var(--text-primary);
+  word-break: break-word;
 }
 
 .activity-time {
   font-size: 13px;
   color: var(--text-secondary);
+  display: block;
 }
 
 .activity-points {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #10b981;
+  white-space: nowrap;
 }
 
 .activity-cost {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #8b5cf6;
+  white-space: nowrap;
 }
 
 .activity-status {
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 10px;
-  background: var(--surface-alt);
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: var(--surface);
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* Modal */

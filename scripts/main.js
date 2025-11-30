@@ -1600,7 +1600,6 @@ async function loadOngoingTasks() {
       .collection("submissions")
       .where("familyCode", "==", familyCode)
       .where("status", "==", "in-progress")
-      .orderBy("createdAt", "desc")
       .get()
 
     if (submissionsSnapshot.empty) {
