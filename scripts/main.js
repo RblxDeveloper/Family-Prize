@@ -98,6 +98,9 @@ function navigateTo(page) {
   window.location.href = url
 }
 
+// Expose navigateTo on window to ensure it's available in all contexts
+try { window.navigateTo = navigateTo } catch (e) {}
+
 // Enhanced toast notification system with auto-dismiss and animations
 function showToast(message, type = 'success', duration = 4000) {
   let container = document.getElementById('toastContainer')
@@ -262,7 +265,11 @@ async function loginAsChild() {
     const userDoc = await db.collection("users").doc(user.uid).get()
     if (userDoc.exists && userDoc.data().role === "child") {
       showNotification("Welcome back!", "success")
-      navigateTo("child-dashboard.html")
+      if (typeof navigateTo === 'function') {
+        navigateTo("child-dashboard.html")
+      } else {
+        window.location.href = getBasePath() + '/child-dashboard.html'
+      }
     } else {
       showNotification("Invalid child account", "error")
       await auth.signOut()
