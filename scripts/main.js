@@ -1973,6 +1973,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let __authInitialized = false
   auth.onAuthStateChanged((user) => {
     if (user) {
+      // Attach invite outcome listener globally so requester self-applies familyCode regardless of page
+      try {
+        if (window.parentInviteOutcomeUnsub) { try { window.parentInviteOutcomeUnsub() } catch(e){}; window.parentInviteOutcomeUnsub = null }
+        window.parentInviteOutcomeUnsub = setupParentInviteOutcomeListener()
+      } catch (e) {
+        console.warn('[TaskQuest] Failed to attach parentInvite outcome listener (global):', e)
+      }
       const currentPage = window.location.pathname.split("/").pop()
       if (currentPage === "child-dashboard.html") {
         // Load child page and attach real-time listeners
@@ -3809,11 +3816,19 @@ function setupParentInviteOutcomeListener() {
           if (hasFamily) return
           // Use the latest approved request
           const d = snap.docs[0].data()
-          const code = d.code
-          if (!code) return
-          // Lookup code to fetch familyCode
-          const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
-          const familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
+          const code = d.code || null
+          let familyCode = null
+          if (code) {
+            const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
+            familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
+          }
+          // Fallback: fetch owner's familyCode if code record lacks it
+          if (!familyCode && d.targetOwnerId) {
+            try {
+              const ownerDoc = await db.collection('users').doc(d.targetOwnerId).get()
+              if (ownerDoc.exists) familyCode = ownerDoc.data().familyCode || null
+            } catch(e) { /* ignore */ }
+          }
           if (!familyCode) return
           await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
           showNotification('You have been linked to this family as a parent.', 'success')
