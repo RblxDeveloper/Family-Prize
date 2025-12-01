@@ -3518,7 +3518,7 @@ async function viewParentRequests() {
   try {
     const user = auth.currentUser
     if (!user) { showNotification('Please sign in as a parent to view requests.', 'error'); return }
-    const snapshot = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).where('status', '==', 'pending').get()
+    const snapshot = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).get()
     if (snapshot.empty) { showNotification('No pending parent requests.', 'info'); return }
     // Build HTML list
     let listHtml = ''

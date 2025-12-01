@@ -114,5 +114,29 @@ service cloud.firestore {
       // Parents can update invites (approve/decline)
       allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
     }
+    
+    // Parent Invite Codes collection - for unique 8-digit invite codes
+    match /parentInviteCodes/{code} {
+      // Parents can create invite codes
+      allow create: if isSignedIn() && isParent() && request.resource.data.ownerId == request.auth.uid;
+      
+      // Any authenticated user can read a code (to verify it exists)
+      allow read: if isSignedIn();
+      
+      // Only the owner can update their code
+      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+    
+    // Parent Invite Requests collection - for approval flow
+    match /parentInviteRequests/{requestId} {
+      // Any authenticated user can create a request
+      allow create: if isSignedIn() && request.resource.data.requesterId == request.auth.uid;
+      
+      // User can read requests they created or requests targeting them
+      allow read: if isSignedIn() && (resource.data.requesterId == request.auth.uid || resource.data.targetOwnerId == request.auth.uid);
+      
+      // Only the target owner can approve/decline
+      allow update: if isSignedIn() && resource.data.targetOwnerId == request.auth.uid;
+    }
   }
 }
