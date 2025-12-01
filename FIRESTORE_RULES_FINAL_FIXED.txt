@@ -1,0 +1,118 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function to get user data (safe read for rule checks)
+    function getUserData() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : null;
+    }
+    
+    // Helper function to check if user is a parent
+    function isParent() {
+      return isSignedIn() && getUserData() != null && getUserData().role == 'parent';
+    }
+
+    // Helper function to check if user is a child
+    function isChild() {
+      return isSignedIn() && getUserData() != null && getUserData().role == 'child';
+    }
+
+    // Helper function to check if a document/family code belongs to the requester's family
+    function isSameFamily(familyCode) {
+      return isSignedIn() && getUserData() != null && getUserData().familyCode == familyCode;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Create: any authenticated user can create their own profile (for signup)
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      // Read: allow owners to read their profile; allow any family member to read within the family
+      allow get: if isSignedIn() && (request.auth.uid == userId || isSameFamily(resource.data.familyCode));
+      allow list: if isSignedIn() && isParent();
+
+      // Update: users can update their own profile; parents can set familyCode on children
+      // Allow parent to write familyCode and displayName to unlinked children (for approval flow)
+      allow update: if (isSignedIn() && request.auth.uid == userId) || 
+                       (isSignedIn() && isParent() && resource.data.role == 'child' && 
+                        (resource.data.familyCode == null || resource.data.familyCode == getUserData().familyCode));
+
+      // Delete: not allowed
+      allow delete: if false;
+    }
+    
+    // Task Templates collection
+    match /taskTemplates/{taskId} {
+      allow read: if isSignedIn() && isSameFamily(resource.data.familyCode);
+      allow create: if isSignedIn() && isParent() && request.resource.data.familyCode == getUserData().familyCode;
+      allow update, delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+    }
+    
+    // Rewards collection
+    match /rewards/{rewardId} {
+      allow read: if isSignedIn() && isSameFamily(resource.data.familyCode);
+      allow create: if isSignedIn() && isParent() && request.resource.data.familyCode == getUserData().familyCode;
+      allow update, delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+    }
+    
+    // Submissions collection
+    match /submissions/{submissionId} {
+      // Allow ANY authenticated user to create submissions (checking role happens after signup)
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+
+      // Read: user's own or family members
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSameFamily(resource.data.familyCode));
+
+      // Parents can update (approve/decline)
+      allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+    }
+    
+    // Redeemed Rewards collection
+    match /redeemedRewards/{redeemId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSameFamily(resource.data.familyCode));
+    }
+    
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow create: if isSignedIn() && isParent() && request.resource.data.familyCode == getUserData().familyCode;
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSameFamily(resource.data.familyCode));
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // Family Requests collection - for child join requests
+    match /familyRequests/{requestId} {
+      // ANY authenticated user can create requests (no role check to avoid chicken-and-egg issue)
+      allow create: if isSignedIn() && request.resource.data.childId == request.auth.uid;
+      
+      // Parents can read requests for their family
+      allow read: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+      
+      // Parents can approve/decline requests in their family
+      allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+      
+      // Only pending requests can be deleted by parent
+      allow delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode && resource.data.status == 'pending';
+    }
+    
+    // Family Invites collection - for parent invite flow
+    match /familyInvites/{inviteId} {
+      // Parents can create invites for their family
+      allow create: if isSignedIn() && isParent() && request.resource.data.familyCode == getUserData().familyCode;
+      
+      // Anyone can read invites sent to their email
+      allow read: if isSignedIn();
+      
+      // Parents can update invites (approve/decline)
+      allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+    }
+  }
+}

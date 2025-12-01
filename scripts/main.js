@@ -3282,7 +3282,7 @@ async function loadPendingFamilyRequests() {
       const timeAgo = createdAt ? getTimeAgo(createdAt) : 'Just now'
       card.innerHTML = `
         <div class="request-header">
-          <h4>${profileName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
+          <h4>${displayName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
           <small>${displayEmail}</small>
         </div>
         <div class="request-body">
