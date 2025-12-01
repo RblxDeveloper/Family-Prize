@@ -1551,6 +1551,16 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
           console.warn('[TaskQuest] Failed to attach familyRequests listener on load:', e)
         }
+        try {
+          // Attach children listener for real-time updates when child updates their user doc
+          if (window.childrenUnsubscribe) {
+            try { window.childrenUnsubscribe() } catch(e){}
+            window.childrenUnsubscribe = null
+          }
+          window.childrenUnsubscribe = setupChildrenListener()
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to attach children listener on load:', e)
+        }
       }
     } else {
       // User not logged in, redirect to index if not already there
@@ -2381,6 +2391,38 @@ async function loadChildProfile() {
           showNotification('Your account has been disabled by a parent. You will be signed out.', 'error')
           auth.signOut().then(() => navigateTo('index.html')).catch(() => {})
         }
+        // Also refresh the family link UI in case familyCode or displayName changed (from parent approval)
+        try {
+          const familyCard = document.getElementById('childFamilyLinkCard')
+          const linkedInfo = document.getElementById('linkedParentInfo')
+          const codeInput = document.getElementById('childFamilyCodeInput')
+          if (familyCard && linkedInfo && codeInput) {
+            if (d.familyCode) {
+              // Child is linked — show parent info
+              codeInput.style.display = 'none'
+              // Try to get parent name
+              try {
+                const parentSnap = db.collection('users').where('familyCode', '==', d.familyCode).where('role', '==', 'parent').limit(1).get().then((ps) => {
+                  if (!ps.empty) {
+                    const p = ps.docs[0].data()
+                    const parentLabel = p.displayName || p.name || 'Parent'
+                    linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${parentLabel}</strong><br><small>Family Code: ${d.familyCode}</small>`
+                  } else {
+                    linkedInfo.textContent = `Linked to family: ${d.familyCode}`
+                  }
+                })
+              } catch (err) {
+                linkedInfo.textContent = `Linked to family: ${d.familyCode}`
+              }
+            } else {
+              // Not linked (or was unlinked)
+              codeInput.style.display = 'inline-block'
+              linkedInfo.textContent = 'Not linked to a family yet.'
+            }
+          }
+        } catch (e) {
+          console.debug('[TaskQuest] Family link UI refresh failed:', e)
+        }
       })
     } catch (watchErr) {
       // Not critical — continue without watcher
@@ -3123,6 +3165,39 @@ function setupFamilyRequestsListener() {
   }
 }
 
+// Real-time listener for children in the parent's family (when children update their user doc)
+function setupChildrenListener() {
+  if (!auth.currentUser) return
+  const user = auth.currentUser
+
+  db.collection('users').doc(user.uid).get().then((doc) => {
+    if (!doc.exists) return
+    const familyCode = doc.data().familyCode
+    if (!familyCode) return
+
+    // Listen for updates to child accounts that match this family code
+    return db
+      .collection('users')
+      .where('familyCode', '==', familyCode)
+      .where('role', '==', 'child')
+      .onSnapshot(
+        (snapshot) => {
+          console.log('[TaskQuest] Children collection update - reloading children list...')
+          loadChildren()
+        },
+        (error) => {
+          if (error && error.code === 'permission-denied') {
+            console.debug('[TaskQuest] Children listener permission denied')
+          } else {
+            console.warn('[TaskQuest] Children listener error:', error)
+          }
+        }
+      )
+  }).catch((err) => {
+    console.warn('[TaskQuest] Failed to attach children listener:', err)
+  })
+}
+
 // Load pending family requests for parent
 async function loadPendingFamilyRequests() {
   try {
@@ -3229,11 +3304,10 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
 
     showNotification('Request approved. The requester will be linked shortly.', 'success')
     loadPendingFamilyRequests()
-    // Refresh lists after a short delay
+    // Refresh children list after a delay to let requester apply approval to their own user doc
     setTimeout(() => {
-      loadChildrenProfiles()
-      loadParentDashboard && loadParentDashboard()
-    }, 500)
+      loadChildren()
+    }, 1500)
   } catch (error) {
     console.error('[TaskQuest] Approve request error:', error)
     showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
