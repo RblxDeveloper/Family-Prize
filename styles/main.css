@@ -1713,10 +1713,8 @@ body {
   white-space: nowrap;
 }
 
-/* Modal */
-/* Enhanced modal */
 .modal {
-  display: none;
+  display: none !important;
   position: fixed;
   z-index: 1000;
   inset: 0;

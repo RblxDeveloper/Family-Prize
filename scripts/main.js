@@ -1143,11 +1143,15 @@ function showLoginForm(type) {
   currentAuthMode = "login"
 
   const modal = document.getElementById("loginModal")
+  if (!modal) return
   modal.style.display = "block"
 
-  document.getElementById("formTitle").textContent = type === "child" ? "Child Login" : "Parent Login"
-  document.getElementById("submitBtn").textContent = "Login"
-  document.getElementById("nameGroup").style.display = "none"
+  const formTitle = document.getElementById("formTitle")
+  if (formTitle) formTitle.textContent = type === "child" ? "Child Login" : "Parent Login"
+  const submitBtn = document.getElementById("submitBtn")
+  if (submitBtn) submitBtn.textContent = "Login"
+  const nameGroup = document.getElementById("nameGroup")
+  if (nameGroup) nameGroup.style.display = "none"
   const familyGroupEl = document.getElementById("familyCodeGroup")
   if (familyGroupEl) familyGroupEl.style.display = "none"
   document.getElementById("toggleAuth").innerHTML =
@@ -1378,7 +1382,9 @@ function showGoogleRoleSelection(googleUser) {
   pendingGoogleUser = googleUser
   
   const modal = document.getElementById("loginModal")
+  if (!modal) return
   const modalContent = modal.querySelector(".modal-content")
+  if (!modalContent) return
   
   // Clear and rebuild modal safely
   modalContent.innerHTML = `
@@ -1581,7 +1587,9 @@ function showAppleRoleSelection(appleUser) {
   pendingAppleUser = appleUser
   
   const modal = document.getElementById("loginModal")
+  if (!modal) return
   const modalContent = modal.querySelector(".modal-content")
+  if (!modalContent) return
   
   // Clear and rebuild modal safely
   modalContent.innerHTML = `
