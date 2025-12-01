@@ -2332,7 +2332,8 @@ async function loadChildProfile() {
           if (!pendingReqs.empty) {
             const req = pendingReqs.docs[0].data()
             codeInput.style.display = "none"
-            linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for ${req.parentName} to approve</small>`
+            // parentName may be null — show a generic waiting message
+            linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for parent approval</small>`
           } else {
             // Not linked and no pending request
             codeInput.style.display = "inline-block"
@@ -2698,6 +2699,52 @@ async function promptParentJoin() {
   }
 }
 
+// Parent: invite another parent/guardian by email (creates a familyInvites document)
+async function addParentInvitePrompt() {
+  try {
+    const user = auth.currentUser
+    if (!user) {
+      showNotification('Please sign in as a parent to invite another parent.', 'error')
+      return
+    }
+
+    const email = prompt('Enter the email address of the parent you want to invite:')
+    if (!email) return
+    const trimmed = String(email).trim()
+    if (!trimmed || !trimmed.includes('@')) {
+      showNotification('Please enter a valid email address.', 'error')
+      return
+    }
+
+    // Get current parent's family code
+    const parentDoc = await db.collection('users').doc(user.uid).get()
+    if (!parentDoc.exists) {
+      showNotification('Could not find your account details.', 'error')
+      return
+    }
+    const familyCode = parentDoc.data().familyCode
+    if (!familyCode) {
+      showNotification('You do not have a family code. Create one first.', 'error')
+      return
+    }
+
+    // Create an invite record — parents can later share invite codes or the invited user redeems
+    await db.collection('familyInvites').add({
+      inviterId: user.uid,
+      inviterName: parentDoc.data().name || null,
+      inviteeEmail: trimmed,
+      familyCode: familyCode,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    })
+
+    showNotification('Parent invite created. The invited user can redeem it when they sign up.', 'success')
+  } catch (error) {
+    console.error('[TaskQuest] addParentInvitePrompt error:', error)
+    showNotification('Failed to create invite: ' + (error.message || String(error)), 'error')
+  }
+}
+
 // Setup real-time listener for tasks (auto-update when parent adds tasks)
 function setupTasksListener() {
   if (!auth.currentUser) return
@@ -2771,29 +2818,44 @@ function getUserFamilyCode() {
   if (!auth.currentUser) return null
   const userDoc = db.collection("users").doc(auth.currentUser.uid)
   // This will fetch from memory if already loaded, or you can cache it
-  return null // Will be set when user data is loaded
+  // Try to return familyCode from a cached userData object if present
+  try {
+    // If we previously loaded the user's doc into `loadedUserData`, prefer that.
+    if (window.loadedUserData && window.loadedUserData.familyCode) return window.loadedUserData.familyCode
+  } catch (e) {}
+  return null // Will be set when user data is loaded elsewhere
 }
 
 // Setup listeners for pending family requests (parent side)
 function setupFamilyRequestsListener() {
   if (!auth.currentUser) return
-  
   const user = auth.currentUser
-  const unsubscribe = db
-    .collection("familyRequests")
-    .where("parentId", "==", user.uid)
-    .where("status", "==", "pending")
-    .onSnapshot(
-      (snapshot) => {
-        console.log("[TaskQuest] New family requests - updating...")
-        loadPendingFamilyRequests()
-      },
-      (error) => {
-        console.warn("[TaskQuest] Family requests listener error:", error)
-      }
-    )
-  
-  return unsubscribe
+  // Fetch parent's familyCode and listen for requests matching it
+  let unsubscribe = null
+  db.collection('users').doc(user.uid).get().then((doc) => {
+    if (!doc.exists) return
+    const data = doc.data()
+    const familyCode = data.familyCode
+    if (!familyCode) return
+
+    unsubscribe = db
+      .collection('familyRequests')
+      .where('familyCode', '==', familyCode)
+      .where('status', '==', 'pending')
+      .onSnapshot(
+        (snapshot) => {
+          console.log('[TaskQuest] New family requests - updating...')
+          loadPendingFamilyRequests()
+        },
+        (error) => {
+          console.warn('[TaskQuest] Family requests listener error:', error)
+        }
+      )
+  }).catch((err) => {
+    console.warn('[TaskQuest] Failed to attach familyRequests listener:', err)
+  })
+
+  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
 }
 
 // Load pending family requests for parent
