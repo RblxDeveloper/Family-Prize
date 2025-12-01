@@ -230,29 +230,48 @@ body {
 
 .nav-links {
   display: flex;
-  gap: 8px;
+  gap: 12px;
+  align-items: center;
 }
 
 .nav-link {
-  padding: 10px 20px;
+  padding: 10px 16px;
   text-decoration: none;
   color: var(--text-secondary);
   font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--radius);
+  transition: var(--transition);
+}
 
-/* Center nav-links on larger screens */
+.nav-link:hover {
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.nav-link.active {
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+/* Desktop: center nav-links */
 @media (min-width: 769px) {
+  .navbar {
+    justify-content: flex-start;
+    gap: 40px;
+  }
+  
   .nav-links {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
-    top: 50%;
-    transform: translate(-50%, -50%);
   }
 }
 
 /* Profile avatar button + dropdown */
 .profile-dropdown {
   position: relative;
+  margin-left: auto;
 }
 
 .profile-btn {
@@ -266,9 +285,17 @@ body {
   background: var(--surface);
   cursor: pointer;
   font-size: 16px;
+  transition: var(--transition);
 }
 
-.profile-initial { font-size: 18px; }
+.profile-btn:hover {
+  background: var(--surface-alt);
+  border-color: var(--text-primary);
+}
+
+.profile-initial { 
+  font-size: 18px; 
+}
 
 .profile-menu {
   position: absolute;
@@ -284,7 +311,9 @@ body {
   z-index: 9999;
 }
 
-.profile-menu.show { display: block; }
+.profile-menu.show { 
+  display: block; 
+}
 
 .profile-menu-item {
   display: block;
@@ -296,58 +325,36 @@ body {
   font-size: 14px;
   border: none;
   width: 100%;
-}
-
-.profile-menu-item:hover { background: var(--surface-alt); }
-
-/* Mobile behavior: hide center nav-links and show mobile-only items in dropdown */
-/* hide mobile-only items by default; show via media query on small screens */
-.mobile-only { display: none; }
-
-@media (max-width: 768px) {
-  .nav-links { display: none; }
-  .mobile-only { display: block; }
-}
-
-/* Desktop behavior: dropdown should only include logout; hide mobile-only items */
-@media (min-width: 769px) {
-  .mobile-only { display: none; }
-}
-  font-size: 15px;
-  border-radius: var(--radius);
-  transition: var(--transition);
   cursor: pointer;
-  position: relative;
+  transition: var(--transition);
+  text-decoration: none;
 }
 
-.nav-link::after {
-  content: "";
-  position: absolute;
-  bottom: 8px;
-  left: 20px;
-  right: 20px;
-  height: 2px;
-  background: var(--text-primary);
-  transform: scaleX(0);
-  transition: transform 0.3s ease;
+.profile-menu-item:hover { 
+  background: var(--surface-alt); 
 }
 
-.nav-link:hover {
-  background: var(--surface);
-  color: var(--text-primary);
+/* Mobile-only nav items hidden by default */
+.mobile-only { 
+  display: none; 
 }
 
-.nav-link.active {
-  background: var(--text-primary);
-  color: var(--text-inverse);
+/* Mobile: hide center nav, show mobile items in dropdown */
+@media (max-width: 768px) {
+  .nav-links { 
+    display: none; 
+  }
+  
+  .mobile-only { 
+    display: block; 
+  }
 }
 
-.nav-link.active::after {
-  transform: scaleX(0);
-}
-
-.nav-link:hover::after {
-  transform: scaleX(1);
+/* Desktop: hide mobile-only items */
+@media (min-width: 769px) {
+  .mobile-only { 
+    display: none; 
+  }
 }
 
 .logout-btn {
