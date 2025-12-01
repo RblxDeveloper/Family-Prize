@@ -3776,7 +3776,22 @@ async function requestParentAccessByCode(code) {
     const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
     if (!codeDoc.exists) { showNotification('Invite code not found.', 'error'); return }
     const ownerId = codeDoc.data().ownerId
+    const ownerFamilyCode = codeDoc.data().familyCode
     if (ownerId === user.uid) { showNotification('This code is your own. Share it with other parents.', 'info'); return }
+
+    // Check if user already has a familyCode (their own family)
+    const myDoc = await db.collection('users').doc(user.uid).get()
+    const myFamilyCode = myDoc.exists ? myDoc.data().familyCode : null
+    
+    if (myFamilyCode && myFamilyCode !== ownerFamilyCode) {
+      // User is leaving their own family to join another
+      const confirmLeave = confirm('You currently have your own family. Joining this family will remove you from your current family. Continue?')
+      if (!confirmLeave) return
+      
+      // Clear own familyCode so the owner can set it when approving
+      console.log('[TaskQuest] Clearing own familyCode to join new family')
+      await db.collection('users').doc(user.uid).update({ familyCode: null })
+    }
 
     // create a parentInviteRequests document
     await db.collection('parentInviteRequests').add({
@@ -3812,24 +3827,17 @@ function setupParentInviteOutcomeListener() {
         try {
           console.log('[TaskQuest] parentInvite outcome snapshot, approved docs:', snap.size)
           if (snap.empty) return
-          // If the user already has a family code, nothing to do
-          const me = await db.collection('users').doc(user.uid).get()
-          const hasFamily = me.exists && !!me.data().familyCode
-          console.log('[TaskQuest] My current familyCode:', me.data()?.familyCode, 'hasFamily:', hasFamily)
-          if (hasFamily) {
-            console.log('[TaskQuest] Already have familyCode, skipping self-apply')
-            // Still refresh UI in case we just got linked
-            try {
-              if (window.location.pathname.includes('parent-dashboard')) {
-                loadCoparents(); loadParentProfile();
-              }
-            } catch(e) {}
-            return
-          }
+          
           // Use the latest approved request
           const reqDoc = snap.docs[0]
           const d = reqDoc.data()
           console.log('[TaskQuest] Approved request data:', d)
+          
+          // Check if already acknowledged
+          if (d.acknowledgedByRequesterAt) {
+            console.log('[TaskQuest] Already acknowledged this request, skipping')
+            return
+          }
           
           // First try: get familyCode directly from the approved request (we now store it there)
           let familyCode = d.familyCode || null
@@ -3967,30 +3975,20 @@ async function approveParentRequest(requestId) {
     console.log('[TaskQuest] Request approved, now attempting to update requester', requesterId, 'with familyCode', familyCode)
 
     // Step 2: best-effort: attempt to set requester.user.familyCode (may be blocked by rules)
+    // Note: We can't read the requester's doc (permission denied) so just try the update directly
     let directUpdateSuccess = false
     try {
       if (requesterId && familyCode) {
-        // First check if requester already has a familyCode
-        const requesterDoc = await db.collection('users').doc(requesterId).get()
-        const requesterData = requesterDoc.exists ? requesterDoc.data() : null
-        console.log('[TaskQuest] Requester current data:', requesterData?.familyCode, requesterData?.role)
-        
-        if (!requesterData?.familyCode) {
-          await db.collection('users').doc(requesterId).update({ familyCode: familyCode, role: 'parent' })
-          directUpdateSuccess = true
-          console.log('[TaskQuest] Successfully updated requester with familyCode')
-        } else {
-          console.log('[TaskQuest] Requester already has familyCode:', requesterData.familyCode)
-          directUpdateSuccess = true // Already linked
-        }
+        console.log('[TaskQuest] Attempting direct update of requester', requesterId)
+        await db.collection('users').doc(requesterId).update({ familyCode: familyCode, role: 'parent' })
+        directUpdateSuccess = true
+        console.log('[TaskQuest] Successfully updated requester with familyCode')
       }
     } catch (e) {
       const code = e && (e.code || '').toString()
       console.warn('[TaskQuest] Failed to update requester directly:', e.message || e)
       if (code === 'permission-denied') {
         console.debug('[TaskQuest] Owner cannot update other parent doc by rules; requester listener will self-apply family code.')
-      } else {
-        console.warn('[TaskQuest] Non-critical requester update error:', e)
       }
     }
 
