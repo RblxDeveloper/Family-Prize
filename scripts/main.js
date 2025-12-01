@@ -1303,7 +1303,7 @@ async function handleRedirectSignIn() {
         await processGoogleSignInResult(result)
       }
     } else {
-      console.log('[TaskQuest] No redirect result found')
+      console.log('[TaskQuest] No redirect result found - may be popup or first load')
     }
   } catch (err) {
     console.warn('[TaskQuest] getRedirectResult error:', err?.code, err?.message)
