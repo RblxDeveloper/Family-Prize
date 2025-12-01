@@ -1724,7 +1724,12 @@ body {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   animation: fadeIn 0.3s ease;
-  display: flex;
+}
+
+/* When modal is visible, use flex centering */
+.modal[style*="display: block"],
+.modal.show {
+  display: flex !important;
   align-items: center;
   justify-content: center;
 }
