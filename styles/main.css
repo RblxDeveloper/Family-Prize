@@ -1732,6 +1732,15 @@ body {
   justify-content: center;
 }
 
+/* Prompt modals (input/confirm) position at top-center instead of middle */
+.modal-prompt[style*="display: block"],
+.modal-prompt.show {
+  display: flex !important;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 40px;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
