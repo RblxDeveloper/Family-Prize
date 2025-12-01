@@ -2830,32 +2830,54 @@ function getUserFamilyCode() {
 function setupFamilyRequestsListener() {
   if (!auth.currentUser) return
   const user = auth.currentUser
-  // Fetch parent's familyCode and listen for requests matching it
-  let unsubscribe = null
+  // Fetch parent's familyCode and listen for requests matching it OR requests with parentId set
+  let unsubscribeCode = null
+  let unsubscribeParentId = null
+
   db.collection('users').doc(user.uid).get().then((doc) => {
     if (!doc.exists) return
     const data = doc.data()
     const familyCode = data.familyCode
-    if (!familyCode) return
 
-    unsubscribe = db
+    // Listen for requests that used the familyCode
+    if (familyCode) {
+      unsubscribeCode = db
+        .collection('familyRequests')
+        .where('familyCode', '==', familyCode)
+        .where('status', '==', 'pending')
+        .onSnapshot(
+          (snapshot) => {
+            console.log('[TaskQuest] familyCode-based familyRequests update - reloading...')
+            loadPendingFamilyRequests()
+          },
+          (error) => {
+            console.warn('[TaskQuest] familyCode listener error:', error)
+          }
+        )
+    }
+
+    // Also listen for requests that explicitly set parentId to this parent (legacy/fallback)
+    unsubscribeParentId = db
       .collection('familyRequests')
-      .where('familyCode', '==', familyCode)
+      .where('parentId', '==', user.uid)
       .where('status', '==', 'pending')
       .onSnapshot(
         (snapshot) => {
-          console.log('[TaskQuest] New family requests - updating...')
+          console.log('[TaskQuest] parentId-based familyRequests update - reloading...')
           loadPendingFamilyRequests()
         },
         (error) => {
-          console.warn('[TaskQuest] Family requests listener error:', error)
+          console.warn('[TaskQuest] parentId listener error:', error)
         }
       )
   }).catch((err) => {
-    console.warn('[TaskQuest] Failed to attach familyRequests listener:', err)
+    console.warn('[TaskQuest] Failed to attach familyRequests listeners:', err)
   })
 
-  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
+  return () => {
+    try { if (unsubscribeCode) unsubscribeCode() } catch (e) {}
+    try { if (unsubscribeParentId) unsubscribeParentId() } catch (e) {}
+  }
 }
 
 // Load pending family requests for parent
@@ -2863,38 +2885,52 @@ async function loadPendingFamilyRequests() {
   try {
     const user = auth.currentUser
     if (!user) return
-
     // Get parent's family code first
     const parentDoc = await db.collection("users").doc(user.uid).get()
     if (!parentDoc.exists) return
-    
     const parentFamilyCode = parentDoc.data().familyCode
-    if (!parentFamilyCode) {
-      const container = document.getElementById("pendingFamilyRequests")
-      if (container) container.innerHTML = '<div class="empty-state"><p>No pending family requests</p></div>'
-      return
+
+    // We'll query both by familyCode (if available) and by parentId (fallback), then merge results
+    const requestsMap = new Map()
+
+    if (parentFamilyCode) {
+      try {
+        const snapshotCode = await db
+          .collection('familyRequests')
+          .where('familyCode', '==', parentFamilyCode)
+          .where('status', '==', 'pending')
+          .get()
+        snapshotCode.forEach((d) => requestsMap.set(d.id, d))
+      } catch (e) {
+        console.warn('[TaskQuest] familyCode query failed:', e)
+      }
     }
 
-    // Query requests by the parent's family code and pending status
-    const requests = await db
-      .collection("familyRequests")
-      .where("familyCode", "==", parentFamilyCode)
-      .where("status", "==", "pending")
-      .get()
+    // Always check requests that explicitly set parentId to this user (legacy/fallback)
+    try {
+      const snapshotParent = await db
+        .collection('familyRequests')
+        .where('parentId', '==', user.uid)
+        .where('status', '==', 'pending')
+        .get()
+      snapshotParent.forEach((d) => requestsMap.set(d.id, d))
+    } catch (e) {
+      console.warn('[TaskQuest] parentId query failed:', e)
+    }
 
-    const container = document.getElementById("pendingFamilyRequests")
+    const container = document.getElementById('pendingFamilyRequests')
     if (!container) return
 
-    if (requests.empty) {
+    if (requestsMap.size === 0) {
       container.innerHTML = '<div class="empty-state"><p>No pending family requests</p></div>'
       return
     }
 
-    container.innerHTML = ""
+    container.innerHTML = ''
 
-    for (const doc of requests.docs) {
+    for (const [id, doc] of requestsMap.entries()) {
       const req = doc.data()
-      const requestId = doc.id
+      const requestId = id
 
       const isGuardian = req.roleRequested === 'parent'
       const displayName = isGuardian ? (req.requesterName || 'Guardian Request') : (req.childName || 'Child')
