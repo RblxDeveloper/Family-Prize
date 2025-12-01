@@ -1477,8 +1477,16 @@ async function completeGoogleSignup(uid, displayName, role) {
 async function signInWithApple() {
   try {
     console.log('[TaskQuest] signInWithApple() called')
-    console.log('[TaskQuest] Auth initialized:', !!auth)
-    console.log('[TaskQuest] OAuthProvider available:', !!firebase.auth.OAuthProvider)
+    console.log('[TaskQuest] firebase object:', typeof firebase)
+    console.log('[TaskQuest] firebase.auth:', typeof firebase?.auth)
+    console.log('[TaskQuest] auth variable:', typeof auth, auth ? 'INITIALIZED' : 'NULL')
+    console.log('[TaskQuest] OAuthProvider:', typeof firebase?.auth?.OAuthProvider)
+    
+    if (!firebase) {
+      console.error('[TaskQuest] Firebase SDK not loaded!')
+      showNotification('Firebase SDK not loaded. Please refresh the page.', 'error')
+      return
+    }
     
     if (!auth) {
       console.error('[TaskQuest] Auth is not initialized!')
@@ -1492,7 +1500,7 @@ async function signInWithApple() {
       return
     }
     
-    console.log('[TaskQuest] Creating Apple OAuth provider...')
+    console.log('[TaskQuest] All checks passed, creating Apple OAuth provider...')
     const appleProvider = new firebase.auth.OAuthProvider('apple.com')
     appleProvider.addScope('email')
     appleProvider.addScope('name')
