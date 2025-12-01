@@ -678,12 +678,26 @@ async function submitTaskForReview() {
     // Check if we have an in-progress submission to update, or create a new one
     if (currentTaskInfo.inProgressSubmissionId) {
       // Update the existing in-progress submission with photos and ensure taskId/taskTitle are set
-      await db.collection("submissions").doc(currentTaskInfo.inProgressSubmissionId).update({
-        ...submissionData,
-        taskId: currentTaskInfo.id,
-        taskTitle: currentTaskInfo.title,
-      })
-      console.log('[TaskQuest] Updated in-progress submission with photos and confirmed taskId:', currentTaskInfo.id)
+      try {
+        await db.collection("submissions").doc(currentTaskInfo.inProgressSubmissionId).update({
+          ...submissionData,
+          taskId: currentTaskInfo.id,
+          taskTitle: currentTaskInfo.title,
+        })
+        console.log('[TaskQuest] Updated in-progress submission with photos and confirmed taskId:', currentTaskInfo.id)
+      } catch (updateErr) {
+        console.warn('[TaskQuest] Update existing submission failed, attempting fresh create:', updateErr)
+        // If update fails (e.g. doc deleted), create a new submission
+        await db.collection("submissions").add({
+          userId: user.uid,
+          taskId: currentTaskInfo.id,
+          taskTitle: currentTaskInfo.title,
+          ...submissionData,
+          familyCode: familyCode,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        })
+        console.log('[TaskQuest] Created new submission as fallback')
+      }
     } else {
       // Create a new submission (fallback if workflow wasn't followed)
       await db.collection("submissions").add({
@@ -2688,6 +2702,11 @@ async function loadChildProfile() {
                 console.log('[TaskQuest] Child successfully updated own user doc')
                 codeInput.style.display = 'none'
                 linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to family</strong><br><small>Family Code: ${req.familyCode}</small>`
+                // Reload available tasks so child sees parent's existing tasks
+                setTimeout(() => {
+                  loadAvailableTasks()
+                  loadRewards()
+                }, 500)
                 // Mark the request as completed (child acknowledges)
                 await db.collection('familyRequests').doc(reqDoc.id).update({ status: 'completed', acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
               } catch (e) {
