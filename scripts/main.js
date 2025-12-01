@@ -3626,19 +3626,32 @@ async function viewParentRequests() {
 async function approveParentRequest(requestId) {
   try {
     const reqRef = db.collection('parentInviteRequests').doc(requestId)
-    const reqDoc = await reqRef.get()
-    if (!reqDoc.exists) { showNotification('Request not found', 'error'); return }
-    const data = reqDoc.data()
-    if (data.status !== 'pending') { showNotification('Request already handled', 'info'); return }
-    // get owner's familyCode
     const owner = auth.currentUser
-    const ownerDoc = await db.collection('users').doc(owner.uid).get()
-    const familyCode = ownerDoc.exists ? ownerDoc.data().familyCode : null
-    // set request to approved
-    await reqRef.update({ status: 'approved', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
-    // assign familyCode to requester user doc
-    await db.collection('users').doc(data.requesterId).update({ familyCode: familyCode })
+    if (!owner) { showNotification('Please sign in as a parent to approve requests.', 'error'); return }
+
+    await db.runTransaction(async (tx) => {
+      const reqDoc = await tx.get(reqRef)
+      if (!reqDoc.exists) throw new Error('Request not found')
+      const data = reqDoc.data()
+      if (data.status !== 'pending') throw new Error('Request already handled')
+
+      const ownerRef = db.collection('users').doc(owner.uid)
+      const ownerDoc = await tx.get(ownerRef)
+      if (!ownerDoc.exists) throw new Error('Owner profile not found')
+      const familyCode = ownerDoc.data().familyCode || null
+      if (!familyCode) throw new Error('Owner has no family code')
+
+      const requesterRef = db.collection('users').doc(data.requesterId)
+      const requesterDoc = await tx.get(requesterRef)
+      if (!requesterDoc.exists) throw new Error('Requester profile not found')
+
+      // Update both request status and the requester user doc atomically
+      tx.update(reqRef, { status: 'approved', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
+      tx.update(requesterRef, { familyCode: familyCode })
+    })
+
     showNotification('Parent request approved — co-parent added.', 'success')
+
     // Reload profile to reflect updated co-parents count
     setTimeout(() => { 
       if (typeof loadParentProfile === 'function') loadParentProfile()
@@ -3653,7 +3666,12 @@ async function approveParentRequest(requestId) {
     }, 500)
   } catch (error) {
     console.error('[TaskQuest] approveParentRequest error:', error)
-    showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
+    const msg = String(error && (error.message || error))
+    if (msg.includes('permission') || msg.includes('Missing or insufficient')) {
+      showNotification('Failed to approve request: permission denied. Please deploy updated Firestore rules and ensure the approver is a parent.', 'error')
+    } else {
+      showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
+    }
   }
 }
 
