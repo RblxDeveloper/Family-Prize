@@ -180,6 +180,81 @@ if (auth) {
   // This runs on every page load to catch redirect completions
   handleRedirectSignIn()
 }
+// Lightweight input modal (returns Promise<string|null>)
+function showInputModal(title, placeholder = '', defaultValue = '') {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div')
+    modal.className = 'modal'
+    modal.style.display = 'block'
+    const content = document.createElement('div')
+    content.className = 'modal-content'
+    content.style.maxWidth = '420px'
+    content.innerHTML = `
+      <span class="close" style="cursor:pointer;">&times;</span>
+      <h3 style="margin-top:0">${title}</h3>
+      <input id="__inputModalInput" style="width:100%; padding:8px; margin-top:8px;" placeholder="${placeholder}" />
+      <div style="margin-top:12px; text-align:right;">
+        <button id="__inputModalCancel" class="secondary-btn">Cancel</button>
+        <button id="__inputModalOk" class="primary-btn">OK</button>
+      </div>
+    `
+    modal.appendChild(content)
+    document.body.appendChild(modal)
+
+    const inp = content.querySelector('#__inputModalInput')
+    const ok = content.querySelector('#__inputModalOk')
+    const cancel = content.querySelector('#__inputModalCancel')
+    const close = content.querySelector('.close')
+    if (inp) { inp.value = defaultValue || ''; inp.focus() }
+
+    function cleanup(val) {
+      try { document.body.removeChild(modal) } catch (e) {}
+      resolve(val)
+    }
+
+    ok.addEventListener('click', () => cleanup(document.getElementById('__inputModalInput').value))
+    cancel.addEventListener('click', () => cleanup(null))
+    close.addEventListener('click', () => cleanup(null))
+    modal.addEventListener('click', (ev) => { if (ev.target === modal) cleanup(null) })
+  })
+}
+
+// Lightweight confirm modal (returns Promise<boolean>)
+function showConfirmModal(title, message) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div')
+    modal.className = 'modal'
+    modal.style.display = 'block'
+    const content = document.createElement('div')
+    content.className = 'modal-content'
+    content.style.maxWidth = '420px'
+    content.innerHTML = `
+      <span class="close" style="cursor:pointer;">&times;</span>
+      <h3 style="margin-top:0">${title}</h3>
+      <p style="margin-top:8px">${message}</p>
+      <div style="margin-top:12px; text-align:right;">
+        <button id="__confirmCancel" class="secondary-btn">Cancel</button>
+        <button id="__confirmOk" class="primary-btn">OK</button>
+      </div>
+    `
+    modal.appendChild(content)
+    document.body.appendChild(modal)
+
+    const ok = content.querySelector('#__confirmOk')
+    const cancel = content.querySelector('#__confirmCancel')
+    const close = content.querySelector('.close')
+
+    function cleanup(val) {
+      try { document.body.removeChild(modal) } catch (e) {}
+      resolve(val)
+    }
+
+    ok.addEventListener('click', () => cleanup(true))
+    cancel.addEventListener('click', () => cleanup(false))
+    close.addEventListener('click', () => cleanup(false))
+    modal.addEventListener('click', (ev) => { if (ev.target === modal) cleanup(false) })
+  })
+}
 
 // ==========================================
 // AUTHENTICATION FUNCTIONS
@@ -298,10 +373,10 @@ async function signupAsParent() {
   }
 
   try {
-    const passcode = prompt("Create a 6-digit PASSCODE for additional security (only you should know this):")
+    const passcode = await showInputModal('Create a 6-digit PASSCODE for additional security (only you should know this):', '6-digit passcode')
 
     if (!passcode || passcode.length !== 6 || isNaN(passcode)) {
-      showNotification("Invalid passcode. Please use exactly 6 digits.", "error")
+      showNotification('Invalid passcode. Please use exactly 6 digits.', 'error')
       return
     }
 
@@ -855,7 +930,8 @@ async function addReward(event) {
 // ==========================================
 
 async function resetPoints(childId) {
-  if (!confirm("Are you sure you want to reset this child's points to 0?")) return
+  const ok = await showConfirmModal('Reset points', "Are you sure you want to reset this child's points to 0?")
+  if (!ok) return
 
   try {
     await db.collection("users").doc(childId).update({
@@ -889,7 +965,8 @@ async function sendRewardNotification(childId) {
 
 // Parent management actions
 async function unlinkChild(childId) {
-  if (!confirm("Are you sure you want to unlink this child from your family? They will need to re-request linking.")) return
+  const ok = await showConfirmModal('Unlink child', "Are you sure you want to unlink this child from your family? They will need to re-request linking.")
+  if (!ok) return
   try {
     await db.collection('users').doc(childId).update({
       familyCode: null,
@@ -903,7 +980,8 @@ async function unlinkChild(childId) {
 }
 
 async function deactivateChild(childId) {
-  if (!confirm("Deactivate this child account? They will be signed out and unable to use the app until reactivated.")) return
+  const ok = await showConfirmModal('Deactivate child', "Deactivate this child account? They will be signed out and unable to use the app until reactivated.")
+  if (!ok) return
   try {
     await db.collection('users').doc(childId).update({
       disabled: true,
@@ -917,14 +995,15 @@ async function deactivateChild(childId) {
 }
 
 function editChildNamePrompt(childId, currentName) {
-  const newName = prompt('Enter new name for child:', currentName || '')
-  if (newName === null) return // cancelled
-  const trimmed = String(newName).trim()
-  if (!trimmed) {
-    showNotification('Name cannot be empty.', 'error')
-    return
-  }
-  editChildName(childId, trimmed)
+  showInputModal('Enter new name for child:', 'Child name', currentName || '').then((newName) => {
+    if (newName === null || newName === undefined) return
+    const trimmed = String(newName).trim()
+    if (!trimmed) {
+      showNotification('Name cannot be empty.', 'error')
+      return
+    }
+    editChildName(childId, trimmed)
+  })
 }
 
 async function editChildName(childId, newName) {
@@ -1204,13 +1283,13 @@ async function completeGoogleSignup(uid, displayName, role) {
   try {
     if (role === "parent") {
       // Parent needs to create a family code
-      const passcode = prompt("Create a 6-digit PASSCODE for additional security (only you should know this):")
-      
+      const passcode = await showInputModal('Create a 6-digit PASSCODE for additional security (only you should know this):', '6-digit passcode')
+
       if (!passcode || passcode.length !== 6 || isNaN(passcode)) {
-        showNotification("Invalid passcode. Please use exactly 6 digits.", "error")
+        showNotification('Invalid passcode. Please use exactly 6 digits.', 'error')
         return
       }
-      
+
       const familyCode = generateFamilyCode()
       
       await db.collection("users").doc(uid).set({
@@ -1570,7 +1649,7 @@ function navigateToSection(target) {
 }
 
 async function showParentPinVerification() {
-  const passcode = prompt("Enter your 6-digit parent PASSCODE to access the dashboard:")
+  const passcode = await showInputModal('Enter your 6-digit parent PASSCODE to access the dashboard:', '6-digit passcode')
 
   if (!passcode) {
     await auth.signOut()
@@ -2081,10 +2160,11 @@ async function loadChildren() {
 }
 
 async function addBonusPoints(childId) {
-  const points = prompt("How many bonus points would you like to add?")
-
-  if (!points || isNaN(points) || Number(points) <= 0) {
-    showNotification("Invalid points amount", "error")
+  const pointsRaw = await showInputModal('How many bonus points would you like to add?', 'e.g. 10')
+  if (!pointsRaw) return
+  const points = Number(pointsRaw)
+  if (isNaN(points) || points <= 0) {
+    showNotification('Invalid points amount', 'error')
     return
   }
 
@@ -2184,7 +2264,7 @@ async function changePasscode() {
   const user = auth.currentUser
   if (!user) return
 
-  const currentPasscode = prompt("Enter your current 6-digit passcode:")
+  const currentPasscode = await showInputModal('Enter your current 6-digit passcode:', '6-digit passcode')
   if (!currentPasscode) return
 
   try {
@@ -2196,13 +2276,13 @@ async function changePasscode() {
       return
     }
 
-    const newPasscode = prompt("Enter your new 6-digit passcode:")
+    const newPasscode = await showInputModal('Enter your new 6-digit passcode:', '6-digit passcode')
     if (!newPasscode || newPasscode.length !== 6 || isNaN(newPasscode)) {
       showNotification("Invalid passcode. Please use exactly 6 digits.", "error")
       return
     }
 
-    const confirmPasscode = prompt("Confirm your new 6-digit passcode:")
+    const confirmPasscode = await showInputModal('Confirm your new 6-digit passcode:', '6-digit passcode')
     if (newPasscode !== confirmPasscode) {
       showNotification("Passcodes do not match", "error")
       return
@@ -2385,17 +2465,36 @@ async function loadChildProfile() {
       if (window.childRequestsUnsubscribe) { try { window.childRequestsUnsubscribe() } catch(e){}; window.childRequestsUnsubscribe = null }
       window.childRequestsUnsubscribe = db.collection('familyRequests')
         .where('childId', '==', user.uid)
-        .where('status', '==', 'pending')
         .onSnapshot((snap) => {
           try {
             const familyCard = document.getElementById('childFamilyLinkCard')
             const linkedInfo = document.getElementById('linkedParentInfo')
             const codeInput = document.getElementById('childFamilyCodeInput')
             if (!familyCard || !linkedInfo || !codeInput) return
+            // If any pending requests exist, show pending status
+            const pending = snap.docs.filter(d => d.data().status === 'pending')
+            const approved = snap.docs.filter(d => d.data().status === 'approved')
 
-            if (!snap.empty) {
+            if (pending.length > 0) {
               codeInput.style.display = 'none'
               linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for parent approval</small>`
+            } else if (approved.length > 0) {
+              // If approved, the child (this client) should update their own user doc to set familyCode/role
+              const req = approved[0].data()
+              try {
+                const updates = { familyCode: req.familyCode }
+                if (req.roleRequested === 'parent') updates.role = 'parent'
+                db.collection('users').doc(user.uid).update(updates).then(() => {
+                  codeInput.style.display = 'none'
+                  linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to family</strong><br><small>Family Code: ${req.familyCode}</small>`
+                  // Mark the request as completed (child acknowledges)
+                  db.collection('familyRequests').doc(approved[0].id).update({ status: 'completed', acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
+                }).catch((err) => {
+                  console.warn('[TaskQuest] Child failed to update own user doc after approval:', err)
+                })
+              } catch (e) {
+                console.warn('[TaskQuest] Error applying approved request locally:', e)
+              }
             } else {
               // Re-evaluate user doc to see if linked
               db.collection('users').doc(user.uid).get().then((ud) => {
@@ -2785,7 +2884,14 @@ async function addParentInvitePrompt() {
       return
     }
 
-    const email = prompt('Enter the email address of the parent you want to invite:')
+    // Ask for 4-digit invite code then email using modal inputs
+    const inviteCode = await showInputModal('Enter a 4-digit invite code to assign to this parent (numbers only):', '4-digit code')
+    if (!inviteCode || inviteCode.length !== 4 || isNaN(inviteCode)) {
+      showNotification('Invalid invite code. Please enter 4 digits.', 'error')
+      return
+    }
+
+    const email = await showInputModal('Enter the email address of the parent you want to invite:', 'email@example.com')
     if (!email) return
     const trimmed = String(email).trim()
     if (!trimmed || !trimmed.includes('@')) {
@@ -2810,12 +2916,13 @@ async function addParentInvitePrompt() {
       inviterId: user.uid,
       inviterName: parentDoc.data().name || null,
       inviteeEmail: trimmed,
+      inviteCode: String(inviteCode),
       familyCode: familyCode,
       status: 'pending',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     })
 
-    showNotification('Parent invite created. The invited user can redeem it when they sign up.', 'success')
+    showNotification('Parent invite created. The invited user can redeem the code and email when they sign up.', 'success')
   } catch (error) {
     console.error('[TaskQuest] addParentInvitePrompt error:', error)
     showNotification('Failed to create invite: ' + (error.message || String(error)), 'error')
@@ -3016,7 +3123,8 @@ async function loadPendingFamilyRequests() {
           .get()
         snapshotCode.forEach((d) => requestsMap.set(d.id, d))
       } catch (e) {
-        console.warn('[TaskQuest] familyCode query failed:', e)
+        if (e && e.code === 'permission-denied') console.debug('[TaskQuest] familyCode query permission denied')
+        else console.warn('[TaskQuest] familyCode query failed:', e)
       }
     }
 
@@ -3029,7 +3137,8 @@ async function loadPendingFamilyRequests() {
         .get()
       snapshotParent.forEach((d) => requestsMap.set(d.id, d))
     } catch (e) {
-      console.warn('[TaskQuest] parentId query failed:', e)
+      if (e && e.code === 'permission-denied') console.debug('[TaskQuest] parentId query permission denied')
+      else console.warn('[TaskQuest] parentId query failed:', e)
     }
 
     const container = document.getElementById('pendingFamilyRequests')
@@ -3084,29 +3193,19 @@ async function loadPendingFamilyRequests() {
 // Approve a family request
 async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequested = 'child') {
   try {
-    if (roleRequested === 'parent') {
-      // Promote the requester to parent role and assign familyCode
-      await db.collection('users').doc(requesterId).update({
-        role: 'parent',
-        familyCode: familyCode
-      })
-    } else {
-      // Standard child join: set child's familyCode
-      await db.collection('users').doc(requesterId).update({
-        familyCode: familyCode
-      })
-    }
-
-    // Mark request as approved
+    // Instead of writing to the child's/user's doc (which your Firestore rules may forbid),
+    // mark the request approved. The requester (child or guardian) will detect the approved
+    // status via their realtime listener and update their own `users/{uid}` doc accordingly.
     await db.collection('familyRequests').doc(requestId).update({
       status: 'approved',
       roleResponded: roleRequested,
+      approvedBy: auth.currentUser ? auth.currentUser.uid : null,
       respondedAt: firebase.firestore.FieldValue.serverTimestamp()
     })
 
-    showNotification(roleRequested === 'parent' ? 'Guardian added to family!' : 'Child added to family!', 'success')
+    showNotification('Request approved. The requester will be linked shortly.', 'success')
     loadPendingFamilyRequests()
-    // Refresh lists
+    // Refresh lists after a short delay
     setTimeout(() => {
       loadChildrenProfiles()
       loadParentDashboard && loadParentDashboard()
@@ -3157,7 +3256,8 @@ async function showRawPendingRequests() {
         const snap = await db.collection('familyRequests').where('familyCode', '==', familyCode).where('status', '==', 'pending').get()
         snap.forEach(d => results.byFamilyCode.push({ id: d.id, data: d.data() }))
       } catch (e) {
-        console.warn('[TaskQuest] showRawPendingRequests familyCode query failed:', e)
+        if (e && e.code === 'permission-denied') console.debug('[TaskQuest] showRawPendingRequests familyCode permission denied')
+        else console.warn('[TaskQuest] showRawPendingRequests familyCode query failed:', e)
       }
     }
 
@@ -3165,7 +3265,8 @@ async function showRawPendingRequests() {
       const snap2 = await db.collection('familyRequests').where('parentId', '==', user.uid).where('status', '==', 'pending').get()
       snap2.forEach(d => results.byParentId.push({ id: d.id, data: d.data() }))
     } catch (e) {
-      console.warn('[TaskQuest] showRawPendingRequests parentId query failed:', e)
+      if (e && e.code === 'permission-denied') console.debug('[TaskQuest] showRawPendingRequests parentId permission denied')
+      else console.warn('[TaskQuest] showRawPendingRequests parentId query failed:', e)
     }
 
     console.log('[TaskQuest] Raw pending requests:', results)
