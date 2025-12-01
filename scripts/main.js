@@ -2073,6 +2073,22 @@ async function loadOngoingTasks() {
       // Defensive check
       if (!submission.userId) continue
       if (!submission.taskId) continue
+      
+      // If there exists a newer submission for the same user/task where the child already submitted (pending) or it's approved,
+      // then don't show this older in-progress entry — the child has effectively moved on.
+      try {
+        const otherSnap = await db.collection('submissions')
+          .where('userId', '==', submission.userId)
+          .where('taskId', '==', submission.taskId)
+          .where('status', 'in', ['pending', 'approved'])
+          .get()
+        if (!otherSnap.empty) {
+          // There is at least one pending/approved submission for this same task by this child; skip showing in-progress
+          continue
+        }
+      } catch (e) {
+        console.warn('[TaskQuest] Failed to check newer submissions for ongoing task:', e)
+      }
 
       // Get child name
       let childName = "Unknown"
