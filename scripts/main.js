@@ -1730,8 +1730,12 @@ function setupChildPointsListener() {
       if (!snap.exists) return
       const data = snap.data()
       const points = data.points || 0
+      // Update the current points display
       const pointsValue = document.querySelector('.points-value')
       if (pointsValue) pointsValue.textContent = points
+      // Also update total points display if it exists
+      const totalPoints = document.getElementById('totalPoints')
+      if (totalPoints) totalPoints.textContent = points
     }, (err) => {
       console.error('[TaskQuest] Child points listener error:', err)
     })
@@ -2779,41 +2783,46 @@ async function loadActivityHistory() {
       return
     }
 
-    // Render as a responsive 3-column grid of cards
+    // Render as a responsive grid of cards (3 cols on desktop, 2 on tablet, 1 on mobile)
     activityList.innerHTML = ""
     activityList.style.display = 'grid'
-    activityList.style.gridTemplateColumns = 'repeat(3, 1fr)'
+    activityList.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))'
     activityList.style.gap = '12px'
+    activityList.style.padding = '0'
+    activityList.style.width = '100%'
+    activityList.style.overflowX = 'visible'
 
     activities.forEach((activity) => {
       const card = document.createElement('div')
       card.className = `activity-card ${activity.type}`
       card.style.cssText = `
         border: 1px solid #e0e0e0;
-        padding: 10px;
+        padding: 12px;
         border-radius: 8px;
         background: #fff;
         display: flex;
         flex-direction: column;
         gap: 8px;
+        box-sizing: border-box;
+        min-width: 0;
       `
       const timeAgo = getTimeAgo(activity.time)
 
       card.innerHTML = `
-        <div class="card-header">
-          <h4>${activity.title}</h4>
-          <span class="activity-time">${timeAgo}</span>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; min-width: 0;">
+          <h4 style="margin: 0; font-size: 14px; word-break: break-word; flex: 1;">${activity.title}</h4>
+          <span class="activity-time" style="font-size: 12px; white-space: nowrap; flex-shrink: 0;">${timeAgo}</span>
         </div>
-        <div class="card-body">
-          <p class="card-desc">${activity.description || ''}</p>
-          <div class="photo-row">
-            <img class="history-photo" src="${activity.beforePhoto || '/before-task.jpg'}" alt="Before" onerror="this.src='/before-task.jpg'">
-            <img class="history-photo" src="${activity.afterPhoto || '/after-task.jpg'}" alt="After" onerror="this.src='/after-task.jpg'">
+        <div class="card-body" style="display: flex; flex-direction: column; gap: 6px;">
+          <p class="card-desc" style="margin: 0; font-size: 12px; color: #666; line-height: 1.3;">${activity.description || ''}</p>
+          <div class="photo-row" style="display: flex; gap: 6px; justify-content: space-between;">
+            <img class="history-photo" src="${activity.beforePhoto || '/before-task.jpg'}" alt="Before" onerror="this.src='/before-task.jpg'" style="width: 48%; height: auto; max-height: 100px; object-fit: cover; border-radius: 4px;">
+            <img class="history-photo" src="${activity.afterPhoto || '/after-task.jpg'}" alt="After" onerror="this.src='/after-task.jpg'" style="width: 48%; height: auto; max-height: 100px; object-fit: cover; border-radius: 4px;">
           </div>
         </div>
-        <div class="card-footer">
-          <span class="points">+${activity.points} pts</span>
-          <span class="status ${activity.type}">${activity.type}</span>
+        <div class="card-footer" style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 4px; padding-top: 8px; border-top: 1px solid #f0f0f0;">
+          <span class="points" style="font-weight: bold;">+${activity.points} pts</span>
+          <span class="status ${activity.type}" style="padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #f0f0f0; color: #333;">${activity.type}</span>
         </div>
       `
 
