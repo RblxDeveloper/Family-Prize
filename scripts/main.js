@@ -2054,6 +2054,7 @@ async function loadChildren() {
 
     const user = auth.currentUser
     const familyCode = await getFamilyCodeForUser(user)
+    console.log('[TaskQuest] loadChildren - parent familyCode:', familyCode)
     if (!familyCode) {
       const childrenGrid = document.getElementById("childrenGrid")
       if (childrenGrid) childrenGrid.innerHTML = `
@@ -2070,6 +2071,8 @@ async function loadChildren() {
       .where("familyCode", "==", familyCode)
       .where("role", "==", "child")
       .get()
+
+    console.log('[TaskQuest] loadChildren - query returned', childrenSnapshot.docs.length, 'children')
 
     if (childrenSnapshot.empty) {
       childrenGrid.innerHTML = `
@@ -2510,6 +2513,7 @@ async function loadChildProfile() {
         .where('childId', '==', user.uid)
         .onSnapshot(async (snap) => {
           try {
+            console.log('[TaskQuest] Child familyRequests snapshot update - docs:', snap.docs.map(d => ({ id: d.id, ...d.data() })))
             const familyCard = document.getElementById('childFamilyLinkCard')
             const linkedInfo = document.getElementById('linkedParentInfo')
             const codeInput = document.getElementById('childFamilyCodeInput')
@@ -2518,6 +2522,8 @@ async function loadChildProfile() {
             const pending = snap.docs.filter(d => d.data().status === 'pending')
             const approved = snap.docs.filter(d => d.data().status === 'approved')
 
+            console.log('[TaskQuest] Child pending:', pending.length, 'approved:', approved.length)
+
             if (pending.length > 0) {
               codeInput.style.display = 'none'
               linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for parent approval</small>`
@@ -2525,6 +2531,7 @@ async function loadChildProfile() {
               // If approved, the child (this client) should update their own user doc to set familyCode/role
               const reqDoc = approved[0]
               const req = reqDoc.data()
+              console.log('[TaskQuest] Child detected approved request:', req)
               try {
                 // Determine desired role (parent or child)
                 const requestedRole = req.roleResponded || req.roleRequested || 'child'
@@ -2548,13 +2555,16 @@ async function loadChildProfile() {
                 // Only change the canonical role if the request explicitly asked for parent role
                 if (requestedRole === 'parent') updates.role = 'parent'
 
+                console.log('[TaskQuest] Child updating own user doc with:', updates)
                 db.collection('users').doc(user.uid).update(updates).then(() => {
+                  console.log('[TaskQuest] Child successfully updated own user doc')
                   codeInput.style.display = 'none'
                   linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to family</strong><br><small>Family Code: ${req.familyCode}</small>`
                   // Mark the request as completed (child acknowledges)
                   db.collection('familyRequests').doc(reqDoc.id).update({ status: 'completed', acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
                 }).catch((err) => {
-                  console.warn('[TaskQuest] Child failed to update own user doc after approval:', err)
+                  console.error('[TaskQuest] Child FAILED to update own user doc after approval:', err)
+                  showNotification('Error: Could not link to family. Check Firestore rules.', 'error')
                 })
               } catch (e) {
                 console.warn('[TaskQuest] Error applying approved request locally:', e)
@@ -3303,17 +3313,20 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
     // Instead of writing to the child's/user's doc (which your Firestore rules may forbid),
     // mark the request approved. The requester (child or guardian) will detect the approved
     // status via their realtime listener and update their own `users/{uid}` doc accordingly.
+    console.log('[TaskQuest] Parent approving request:', { requestId, requesterId, familyCode, roleRequested })
     await db.collection('familyRequests').doc(requestId).update({
       status: 'approved',
       roleResponded: roleRequested,
       approvedBy: auth.currentUser ? auth.currentUser.uid : null,
       respondedAt: firebase.firestore.FieldValue.serverTimestamp()
     })
+    console.log('[TaskQuest] Request marked as approved in Firestore')
 
     showNotification('Request approved. The requester will be linked shortly.', 'success')
     loadPendingFamilyRequests()
     // Refresh children list after a delay to let requester apply approval to their own user doc
     setTimeout(() => {
+      console.log('[TaskQuest] Parent calling loadChildren() after approval')
       loadChildren()
     }, 1500)
   } catch (error) {
