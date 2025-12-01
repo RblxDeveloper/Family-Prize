@@ -1407,6 +1407,203 @@ async function completeGoogleSignup(uid, displayName, role) {
   }
 }
 
+// Apple Sign-In Function
+async function signInWithApple() {
+  try {
+    console.log('[TaskQuest] signInWithApple() called')
+    
+    if (!auth) {
+      showNotification('Firebase not initialized. Please refresh the page.', 'error')
+      return
+    }
+    
+    const appleProvider = new firebase.auth.OAuthProvider('apple.com')
+    appleProvider.addScope('email')
+    appleProvider.addScope('name')
+    
+    // Try popup first (better UX). If it fails (popup blocker), fall back to redirect.
+    try {
+      console.log('[TaskQuest] Attempting Apple popup sign-in...')
+      const result = await auth.signInWithPopup(appleProvider)
+      console.log('[TaskQuest] Apple popup sign-in successful, user:', result.user?.email)
+      await processAppleSignInResult(result)
+    } catch (popupErr) {
+      console.warn('[TaskQuest] Apple popup sign-in failed, falling back to redirect:', popupErr?.code, popupErr?.message)
+      if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
+        showNotification('Popup blocked or cancelled. Using redirect sign-in as a fallback.', 'warning')
+      }
+      try {
+        console.log('[TaskQuest] Attempting Apple redirect sign-in...')
+        await auth.signInWithRedirect(appleProvider)
+      } catch (redirectErr) {
+        console.error('[TaskQuest] Apple redirect sign-in also failed:', redirectErr?.code, redirectErr?.message)
+        if (redirectErr.code === 'auth/unauthorized-domain') {
+          showNotification('Apple Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
+        } else if (redirectErr.code === 'auth/operation-not-supported-in-this-environment') {
+          showNotification('Apple Sign-In not available. Enable Apple authentication in Firebase Console.', 'error')
+        } else {
+          showNotification('Apple Sign-In failed: ' + redirectErr.message, 'error')
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[TaskQuest] Apple Sign-In outer error:", error)
+    showNotification('Apple Sign-In failed: ' + (error?.message || String(error)), 'error')
+  }
+}
+
+// Centralized processing for an Apple sign-in result (popup or redirect)
+async function processAppleSignInResult(result) {
+  if (!result || !result.user) {
+    console.warn('[TaskQuest] processAppleSignInResult: no user in result')
+    return
+  }
+  const user = result.user
+  console.log('[TaskQuest] processAppleSignInResult: user =', user.uid, user.email)
+  
+  try {
+    if (!db) {
+      console.error('[TaskQuest] Firestore not initialized!')
+      showNotification('Database not initialized. Please refresh the page.', 'error')
+      return
+    }
+    
+    console.log('[TaskQuest] Fetching user doc from Firestore...')
+    const userDoc = await db.collection('users').doc(user.uid).get()
+    console.log('[TaskQuest] User doc exists:', userDoc.exists)
+    
+    if (userDoc.exists) {
+      const userData = userDoc.data()
+      console.log('[TaskQuest] User data:', userData?.role)
+      
+      if (userData.role === 'parent') {
+        console.log('[TaskQuest] Showing parent PIN verification')
+        showNotification('Welcome back, Parent!', 'success')
+        try {
+          const modal = document.getElementById('loginModal')
+          if (modal) modal.style.display = 'none'
+        } catch (e) {}
+        setTimeout(() => {
+          console.log('[TaskQuest] Calling navigateTo parent-dashboard.html')
+          navigateTo('parent-dashboard.html')
+        }, 800)
+      } else if (userData.role === 'child') {
+        console.log('[TaskQuest] Child user, loading dashboard')
+        showNotification('Welcome back!', 'success')
+        try {
+          const modal = document.getElementById('loginModal')
+          if (modal) modal.style.display = 'none'
+        } catch (e) {}
+        setTimeout(() => {
+          console.log('[TaskQuest] Calling navigateTo child-dashboard.html')
+          navigateTo('child-dashboard.html')
+        }, 800)
+      }
+    } else {
+      // New user - need to determine role and complete profile
+      console.log('[TaskQuest] New Apple user, showing role selection')
+      showAppleRoleSelection(user)
+    }
+  } catch (err) {
+    console.error('[TaskQuest] Failed processing Apple sign-in result:', err)
+    const errMsg = err?.message || String(err)
+    if (errMsg.includes('Missing or insufficient permissions')) {
+      showNotification('Permission denied reading user profile. Check Firestore rules.', 'error')
+    } else {
+      showNotification('Sign-in succeeded but processing failed: ' + errMsg, 'error')
+    }
+  }
+}
+
+// Store current Apple user for role selection
+let pendingAppleUser = null
+
+function showAppleRoleSelection(appleUser) {
+  // Store the user in a variable to avoid HTML escaping issues
+  pendingAppleUser = appleUser
+  
+  const modal = document.getElementById("loginModal")
+  const modalContent = modal.querySelector(".modal-content")
+  
+  // Clear and rebuild modal safely
+  modalContent.innerHTML = `
+    <span class="close" onclick="closeLoginModal()">&times;</span>
+    <h2>Welcome to TaskQuest!</h2>
+    <p style="color: var(--text-secondary); margin: 20px 0;">Are you a Parent or a Child?</p>
+    <div style="display: flex; gap: 16px; flex-direction: column;">
+      <button type="button" onclick="completeAppleSignup('parent')" style="padding: 14px; background: var(--primary); color: white; border: none; border-radius: var(--radius); font-weight: 600; cursor: pointer;">
+        I'm a Parent
+      </button>
+      <button type="button" onclick="completeAppleSignup('child')" style="padding: 14px; background: var(--secondary); color: white; border: none; border-radius: var(--radius); font-weight: 600; cursor: pointer;">
+        I'm a Child
+      </button>
+    </div>
+  `
+  modal.style.display = "block"
+}
+
+async function completeAppleSignup(role) {
+  try {
+    if (!pendingAppleUser) {
+      showNotification('User session lost. Please try signing in again.', 'error')
+      return
+    }
+    
+    const user = pendingAppleUser
+    const uid = user.uid
+    const displayName = user.displayName || user.email?.split('@')[0] || 'User'
+    
+    if (role === 'parent') {
+      const passcode = prompt('Set a PIN for parent account (4-6 digits):', '')
+      if (!passcode || passcode.length < 4 || passcode.length > 6 || isNaN(passcode)) {
+        showNotification('PIN must be 4-6 digits', 'error')
+        return
+      }
+
+      const familyCode = generateFamilyCode()
+      
+      await db.collection("users").doc(uid).set({
+        name: displayName,
+        email: user.email,
+        role: "parent",
+        passcode: passcode,
+        familyCode: familyCode,
+        authProvider: "apple",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      })
+      
+      showNotification(`Welcome! Your Family Code is: ${familyCode} - Share this with your children!`, "success")
+      closeLoginModal()
+      pendingAppleUser = null
+      setTimeout(() => {
+        showParentPinVerification()
+      }, 800)
+    } else {
+      // Child role
+      await db.collection("users").doc(uid).set({
+        name: displayName,
+        email: user.email,
+        role: "child",
+        points: 0,
+        authProvider: "apple",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      })
+      
+      showNotification("Welcome, " + displayName + "!", "success")
+      closeLoginModal()
+      pendingAppleUser = null
+      setTimeout(() => {
+        navigateTo("child-dashboard.html")
+      }, 800)
+    }
+  } catch (error) {
+    console.error("[TaskQuest] Apple signup completion error:", error)
+    showNotification("Signup failed: " + error.message, "error")
+    // Reset pending user on error
+    pendingAppleUser = null
+  }
+}
+
 function closeLoginModal() {
   document.getElementById("loginModal").style.display = "none"
   document.getElementById("loginForm").reset()
