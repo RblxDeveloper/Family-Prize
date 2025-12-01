@@ -134,10 +134,12 @@ if (auth) {
     
     // If user exists, check if their account has been disabled by a parent
     if (user) {
-      db.collection('users').doc(user.uid).get().then((doc) => {
-        if (doc.exists) {
-          const data = doc.data()
-          if (data.disabled === true && data.role === 'child') {
+        db.collection('users').doc(user.uid).get().then((doc) => {
+          if (doc.exists) {
+            const data = doc.data()
+            // Cache loaded user data for quick use by listeners
+            try { window.loadedUserData = data } catch (e) {}
+            if (data.disabled === true && data.role === 'child') {
             showNotification('This account has been disabled by a parent. You have been signed out.', 'error')
             // Force sign out for disabled child accounts
             auth.signOut().then(() => {
@@ -1432,13 +1434,26 @@ document.addEventListener("DOMContentLoaded", () => {
   auth.onAuthStateChanged((user) => {
     if (user) {
       const currentPage = window.location.pathname.split("/").pop()
-
       if (currentPage === "child-dashboard.html") {
+        // Load child page and attach real-time listeners
         loadChildPoints()
         loadAvailableTasks()
         loadRewards()
         loadChildProfile()
         initializeSectionVisibility()
+
+        // Attach listeners for tasks, rewards and submissions so child sees updates live
+        try {
+          if (window.tasksUnsubscribe) { try { window.tasksUnsubscribe() } catch(e){}; window.tasksUnsubscribe = null }
+          if (window.rewardsUnsubscribe) { try { window.rewardsUnsubscribe() } catch(e){}; window.rewardsUnsubscribe = null }
+          if (window.submissionsUnsubscribe) { try { window.submissionsUnsubscribe() } catch(e){}; window.submissionsUnsubscribe = null }
+          window.tasksUnsubscribe = setupTasksListener()
+          window.rewardsUnsubscribe = setupRewardsListener()
+          window.submissionsUnsubscribe = setupSubmissionsListener()
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to attach child realtime listeners:', e)
+        }
+
       } else if (currentPage === "parent-dashboard.html") {
         loadPendingApprovals()
         loadOngoingTasks()
@@ -2365,6 +2380,48 @@ async function loadChildProfile() {
       console.warn("Child profile family UI update failed:", uiErr)
     }
 
+    // Attach a realtime listener for the child's own pending family requests so UI updates automatically
+    try {
+      if (window.childRequestsUnsubscribe) { try { window.childRequestsUnsubscribe() } catch(e){}; window.childRequestsUnsubscribe = null }
+      window.childRequestsUnsubscribe = db.collection('familyRequests')
+        .where('childId', '==', user.uid)
+        .where('status', '==', 'pending')
+        .onSnapshot((snap) => {
+          try {
+            const familyCard = document.getElementById('childFamilyLinkCard')
+            const linkedInfo = document.getElementById('linkedParentInfo')
+            const codeInput = document.getElementById('childFamilyCodeInput')
+            if (!familyCard || !linkedInfo || !codeInput) return
+
+            if (!snap.empty) {
+              codeInput.style.display = 'none'
+              linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for parent approval</small>`
+            } else {
+              // Re-evaluate user doc to see if linked
+              db.collection('users').doc(user.uid).get().then((ud) => {
+                if (ud.exists && ud.data().familyCode) {
+                  codeInput.style.display = 'none'
+                  linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to family</strong><br><small>Family Code: ${ud.data().familyCode}</small>`
+                } else {
+                  codeInput.style.display = 'inline-block'
+                  linkedInfo.textContent = 'Not linked to a family yet.'
+                }
+              }).catch(() => {})
+            }
+          } catch (err) {
+            console.warn('[TaskQuest] childRequests snapshot handler error:', err)
+          }
+        }, (error) => {
+          if (error && error.code === 'permission-denied') {
+            console.debug('[TaskQuest] childRequests listener permission denied')
+          } else {
+            console.warn('[TaskQuest] childRequests listener error:', error)
+          }
+        })
+    } catch (e) {
+      console.warn('[TaskQuest] Could not attach childRequests listener:', e)
+    }
+
     // Get completed tasks count
     const completedSnapshot = await db
       .collection("submissions")
@@ -2768,69 +2825,92 @@ async function addParentInvitePrompt() {
 // Setup real-time listener for tasks (auto-update when parent adds tasks)
 function setupTasksListener() {
   if (!auth.currentUser) return
-  
   const user = auth.currentUser
-  const unsubscribe = db
-    .collection("taskTemplates")
-    .where("familyCode", "==", getUserFamilyCode())
-    .onSnapshot(
-      (snapshot) => {
-        console.log("[TaskQuest] Tasks updated - reloading...")
+  let unsubscribe = null
+  db.collection('users').doc(user.uid).get().then((doc) => {
+    if (!doc.exists) return
+    const familyCode = doc.data().familyCode
+    if (!familyCode) return
+
+    unsubscribe = db
+      .collection('taskTemplates')
+      .where('familyCode', '==', familyCode)
+      .onSnapshot((snapshot) => {
+        console.log('[TaskQuest] Tasks updated - reloading...')
         loadAvailableTasks()
-      },
-      (error) => {
-        console.warn("[TaskQuest] Tasks listener error:", error)
-      }
-    )
-  
-  return unsubscribe
+      }, (error) => {
+        if (error && error.code === 'permission-denied') {
+          console.debug('[TaskQuest] Tasks listener permission denied')
+        } else {
+          console.warn('[TaskQuest] Tasks listener error:', error)
+        }
+      })
+  }).catch((err) => {
+    console.warn('[TaskQuest] Failed to attach tasks listener:', err)
+  })
+
+  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
 }
 
 // Setup real-time listener for rewards (auto-update when parent adds rewards)
 function setupRewardsListener() {
   if (!auth.currentUser) return
-  
-  const familyCode = getUserFamilyCode()
-  if (!familyCode) return
-  
-  const unsubscribe = db
-    .collection("rewards")
-    .where("familyCode", "==", familyCode)
-    .onSnapshot(
-      (snapshot) => {
-        console.log("[TaskQuest] Rewards updated - reloading...")
+  const user = auth.currentUser
+  let unsubscribe = null
+  db.collection('users').doc(user.uid).get().then((doc) => {
+    if (!doc.exists) return
+    const familyCode = doc.data().familyCode
+    if (!familyCode) return
+
+    unsubscribe = db
+      .collection('rewards')
+      .where('familyCode', '==', familyCode)
+      .onSnapshot((snapshot) => {
+        console.log('[TaskQuest] Rewards updated - reloading...')
         loadRewards()
-      },
-      (error) => {
-        console.warn("[TaskQuest] Rewards listener error:", error)
-      }
-    )
-  
-  return unsubscribe
+      }, (error) => {
+        if (error && error.code === 'permission-denied') {
+          console.debug('[TaskQuest] Rewards listener permission denied')
+        } else {
+          console.warn('[TaskQuest] Rewards listener error:', error)
+        }
+      })
+  }).catch((err) => {
+    console.warn('[TaskQuest] Failed to attach rewards listener:', err)
+  })
+
+  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
 }
 
 // Setup real-time listener for submissions (auto-update when parent approves/declines)
 function setupSubmissionsListener() {
   if (!auth.currentUser) return
-  
-  const familyCode = getUserFamilyCode()
-  if (!familyCode) return
-  
-  const unsubscribe = db
-    .collection("submissions")
-    .where("familyCode", "==", familyCode)
-    .onSnapshot(
-      (snapshot) => {
-        console.log("[TaskQuest] Submissions updated - reloading...")
+  const user = auth.currentUser
+  let unsubscribe = null
+  db.collection('users').doc(user.uid).get().then((doc) => {
+    if (!doc.exists) return
+    const familyCode = doc.data().familyCode
+    if (!familyCode) return
+
+    unsubscribe = db
+      .collection('submissions')
+      .where('familyCode', '==', familyCode)
+      .onSnapshot((snapshot) => {
+        console.log('[TaskQuest] Submissions updated - reloading...')
         loadAvailableTasks()
         loadActivityHistory()
-      },
-      (error) => {
-        console.warn("[TaskQuest] Submissions listener error:", error)
-      }
-    )
-  
-  return unsubscribe
+      }, (error) => {
+        if (error && error.code === 'permission-denied') {
+          console.debug('[TaskQuest] Submissions listener permission denied')
+        } else {
+          console.warn('[TaskQuest] Submissions listener error:', error)
+        }
+      })
+  }).catch((err) => {
+    console.warn('[TaskQuest] Failed to attach submissions listener:', err)
+  })
+
+  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
 }
 
 // Get user's family code
@@ -2861,35 +2941,49 @@ function setupFamilyRequestsListener() {
 
     // Listen for requests that used the familyCode
     if (familyCode) {
-      unsubscribeCode = db
-        .collection('familyRequests')
-        .where('familyCode', '==', familyCode)
-        .where('status', '==', 'pending')
-        .onSnapshot(
-          (snapshot) => {
-            console.log('[TaskQuest] familyCode-based familyRequests update - reloading...')
-            loadPendingFamilyRequests()
-          },
-          (error) => {
-            console.warn('[TaskQuest] familyCode listener error:', error)
-          }
-        )
+        unsubscribeCode = db
+          .collection('familyRequests')
+          .where('familyCode', '==', familyCode)
+          .where('status', '==', 'pending')
+          .onSnapshot(
+            (snapshot) => {
+              console.log('[TaskQuest] familyCode-based familyRequests update - reloading...')
+              loadPendingFamilyRequests()
+            },
+            (error) => {
+              if (error && error.code === 'permission-denied') {
+                console.debug('[TaskQuest] familyCode listener permission denied')
+              } else {
+                console.warn('[TaskQuest] familyCode listener error:', error)
+              }
+            }
+          )
     }
 
     // Also listen for requests that explicitly set parentId to this parent (legacy/fallback)
-    unsubscribeParentId = db
-      .collection('familyRequests')
-      .where('parentId', '==', user.uid)
-      .where('status', '==', 'pending')
-      .onSnapshot(
-        (snapshot) => {
-          console.log('[TaskQuest] parentId-based familyRequests update - reloading...')
-          loadPendingFamilyRequests()
-        },
-        (error) => {
-          console.warn('[TaskQuest] parentId listener error:', error)
-        }
-      )
+    try {
+      unsubscribeParentId = db
+        .collection('familyRequests')
+        .where('parentId', '==', user.uid)
+        .where('status', '==', 'pending')
+        .onSnapshot(
+          (snapshot) => {
+            console.log('[TaskQuest] parentId-based familyRequests update - reloading...')
+            loadPendingFamilyRequests()
+          },
+          (error) => {
+            if (error && error.code === 'permission-denied') {
+              // Rules may forbid parentId reads — suppress noisy logs
+              console.debug('[TaskQuest] parentId listener permission denied')
+            } else {
+              console.warn('[TaskQuest] parentId listener error:', error)
+            }
+          }
+        )
+    } catch (e) {
+      // Some security rules can throw when trying to construct the listener
+      console.debug('[TaskQuest] parentId listener could not be attached (likely rules):', e && e.code ? e.code : e)
+    }
   }).catch((err) => {
     console.warn('[TaskQuest] Failed to attach familyRequests listeners:', err)
   })
@@ -2959,10 +3053,17 @@ async function loadPendingFamilyRequests() {
 
       const card = document.createElement('div')
       card.className = 'family-request-card'
+      const createdAt = req.createdAt ? (req.createdAt.toDate ? req.createdAt.toDate() : new Date(req.createdAt)) : null
+      const timeAgo = createdAt ? getTimeAgo(createdAt) : 'Just now'
       card.innerHTML = `
         <div class="request-header">
           <h4>${displayName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
           <small>${displayEmail}</small>
+        </div>
+        <div class="request-body">
+          <p><strong>ID:</strong> ${requesterId}</p>
+          <p><strong>Family Code:</strong> ${req.familyCode || '—'}</p>
+          <p><strong>Submitted:</strong> ${timeAgo}</p>
         </div>
         <div class="request-actions">
           <button class="btn-approve" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')">
