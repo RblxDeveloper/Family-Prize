@@ -2120,7 +2120,7 @@ async function loadChildren() {
       childCard.className = "child-card"
       childCard.innerHTML = `
         <div class="child-avatar">👤</div>
-        <h3>${child.name}</h3>
+        <h3>${child.displayName || child.name}</h3>
         <div class="child-stats">
           <div class="stat">
             <span class="stat-label">Points</span>
@@ -2429,7 +2429,8 @@ async function loadChildProfile() {
             
             if (!parentSnap.empty) {
               const p = parentSnap.docs[0].data()
-              linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${p.name}</strong><br><small>Family Code: ${userData.familyCode}</small>`
+              const parentLabel = p.displayName || p.name || 'Parent'
+              linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${parentLabel}</strong><br><small>Family Code: ${userData.familyCode}</small>`
             } else {
               linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
             }
@@ -2465,7 +2466,7 @@ async function loadChildProfile() {
       if (window.childRequestsUnsubscribe) { try { window.childRequestsUnsubscribe() } catch(e){}; window.childRequestsUnsubscribe = null }
       window.childRequestsUnsubscribe = db.collection('familyRequests')
         .where('childId', '==', user.uid)
-        .onSnapshot((snap) => {
+        .onSnapshot(async (snap) => {
           try {
             const familyCard = document.getElementById('childFamilyLinkCard')
             const linkedInfo = document.getElementById('linkedParentInfo')
@@ -2480,15 +2481,36 @@ async function loadChildProfile() {
               linkedInfo.innerHTML = `<strong style="color: #FFA500;">⏳ Request pending...</strong><br><small>Waiting for parent approval</small>`
             } else if (approved.length > 0) {
               // If approved, the child (this client) should update their own user doc to set familyCode/role
-              const req = approved[0].data()
+              const reqDoc = approved[0]
+              const req = reqDoc.data()
               try {
-                const updates = { familyCode: req.familyCode }
-                if (req.roleRequested === 'parent') updates.role = 'parent'
+                // Determine desired role (parent or child)
+                const requestedRole = req.roleResponded || req.roleRequested || 'child'
+
+                // Try to pick a sensible display/name: prefer name from the request, fall back to existing user doc
+                let nameToUse = req.childName || req.requesterName || null
+                if (!nameToUse) {
+                  try {
+                    const myDoc = await db.collection('users').doc(user.uid).get()
+                    if (myDoc.exists) nameToUse = myDoc.data().name || null
+                  } catch (e) {
+                    // ignore - we'll fallback to a generic label
+                  }
+                }
+                if (!nameToUse) nameToUse = 'Account'
+
+                const roleLabel = (requestedRole === 'parent') ? 'parent' : 'child'
+                const displayNameFormatted = `${nameToUse} (${roleLabel})`
+
+                const updates = { familyCode: req.familyCode, displayName: displayNameFormatted }
+                // Only change the canonical role if the request explicitly asked for parent role
+                if (requestedRole === 'parent') updates.role = 'parent'
+
                 db.collection('users').doc(user.uid).update(updates).then(() => {
                   codeInput.style.display = 'none'
                   linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to family</strong><br><small>Family Code: ${req.familyCode}</small>`
                   // Mark the request as completed (child acknowledges)
-                  db.collection('familyRequests').doc(approved[0].id).update({ status: 'completed', acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
+                  db.collection('familyRequests').doc(reqDoc.id).update({ status: 'completed', acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
                 }).catch((err) => {
                   console.warn('[TaskQuest] Child failed to update own user doc after approval:', err)
                 })
@@ -3156,7 +3178,9 @@ async function loadPendingFamilyRequests() {
       const requestId = id
 
       const isGuardian = req.roleRequested === 'parent'
-      const displayName = isGuardian ? (req.requesterName || 'Guardian Request') : (req.childName || 'Child')
+      let displayName = isGuardian ? (req.requesterName || 'Guardian Request') : (req.childName || 'Child')
+      // Append role label in parentheses for clarity
+      try { displayName = `${displayName} (${isGuardian ? 'parent' : 'child'})` } catch(e) {}
       const displayEmail = isGuardian ? (req.requesterEmail || '') : (req.childEmail || '')
       const requesterId = isGuardian ? req.requesterId : req.childId
 
