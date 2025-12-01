@@ -1940,6 +1940,11 @@ function navigateToSection(target) {
         if (typeof loadChildProfile === 'function') loadChildProfile()
       }
       break
+    case "coparents":
+      const coparentsSection = document.getElementById("coparents-section")
+      if (coparentsSection) coparentsSection.style.display = "block"
+      if (typeof loadCoparents === 'function') loadCoparents()
+      break
     case "approvals":
       const approvalsSection = document.getElementById("approvals-section")
       if (approvalsSection) approvalsSection.style.display = "block"
@@ -3513,7 +3518,8 @@ async function requestParentAccessByCode(code) {
       code: code,
       targetOwnerId: ownerId,
       requesterId: user.uid,
-      requesterName: user.displayName || user.email || null,
+      requesterName: user.displayName || user.email?.split('@')[0] || 'Parent',
+      requesterEmail: user.email || null,
       status: 'pending',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       respondedAt: null
@@ -3585,6 +3591,8 @@ async function approveParentRequest(requestId) {
     // assign familyCode to requester user doc
     await db.collection('users').doc(data.requesterId).update({ familyCode: familyCode })
     showNotification('Parent request approved — co-parent added.', 'success')
+    // Reload profile to reflect updated co-parents count
+    setTimeout(() => { if (typeof loadParentProfile === 'function') loadParentProfile() }, 500)
   } catch (error) {
     console.error('[TaskQuest] approveParentRequest error:', error)
     showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
@@ -3620,10 +3628,11 @@ async function loadParentProfile() {
     const userDoc = await db.collection('users').doc(user.uid).get()
     if (!userDoc.exists) return
     const data = userDoc.data()
+    const displayName = data.name || user.displayName || (user.email ? user.email.split('@')[0] : 'Parent')
     const nameEl = document.getElementById('parentProfileName')
     const emailEl = document.getElementById('parentProfileEmail')
     const familyEl = document.getElementById('familyCodeParent')
-    if (nameEl) nameEl.textContent = data.name || (user.email ? user.email.split('@')[0] : 'Parent')
+    if (nameEl) nameEl.textContent = displayName
     if (emailEl) emailEl.textContent = user.email || ''
     if (familyEl) familyEl.textContent = data.familyCode || '------'
 
@@ -3660,6 +3669,57 @@ async function loadParentProfile() {
     activityEl.innerHTML = html
   } catch (error) {
     console.error('[TaskQuest] loadParentProfile error:', error)
+  }
+}
+
+// Load co-parents list for parent dashboard
+async function loadCoparents() {
+  try {
+    const user = auth.currentUser
+    if (!user) { showNotification('Please sign in.', 'error'); return }
+    
+    const userDoc = await db.collection('users').doc(user.uid).get()
+    if (!userDoc.exists) return
+    const familyCode = userDoc.data().familyCode
+    if (!familyCode) { 
+      document.getElementById('coparentsGrid').innerHTML = '<p>No family code set.</p>'
+      return 
+    }
+
+    // Get all parents in the family (excluding self)
+    const parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
+    const parents = []
+    parentsSnap.forEach(doc => {
+      if (doc.id !== user.uid) { // Exclude self
+        parents.push({ id: doc.id, ...doc.data() })
+      }
+    })
+
+    const gridEl = document.getElementById('coparentsGrid')
+    if (!gridEl) return
+
+    if (parents.length === 0) {
+      gridEl.innerHTML = '<p>No co-parents yet. Share your invite code to add guardians.</p>'
+      return
+    }
+
+    let html = ''
+    parents.forEach(parent => {
+      const name = parent.name || parent.email?.split('@')[0] || 'Parent'
+      const email = parent.email || 'N/A'
+      html += `<div style="padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div>
+          <div style="font-weight:600;">${escapeHtml(name)}</div>
+          <div style="font-size:12px; color:var(--text-secondary);">${escapeHtml(email)}</div>
+        </div>
+        <div style="font-size:12px; color:var(--text-secondary);">Co-Parent</div>
+      </div>`
+    })
+    gridEl.innerHTML = html
+  } catch (error) {
+    console.error('[TaskQuest] loadCoparents error:', error)
+    const gridEl = document.getElementById('coparentsGrid')
+    if (gridEl) gridEl.innerHTML = '<p>Error loading co-parents.</p>'
   }
 }
 

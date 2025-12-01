@@ -34,6 +34,7 @@
                 <a class="profile-menu-item mobile-only" href="#manage" onclick="toggleProfileMenu(false); navigateToSection('manage'); return false;">Manage</a>
                 <a class="profile-menu-item mobile-only" href="#settings" onclick="toggleProfileMenu(false); navigateToSection('settings'); return false;">Settings</a>
                 <a class="profile-menu-item" href="#profile" onclick="toggleProfileMenu(false); navigateToSection('profile'); return false;">Profile</a>
+                <a class="profile-menu-item" href="#coparents" onclick="toggleProfileMenu(false); navigateToSection('coparents'); return false;">Co-Parents</a>
                 <button class="profile-menu-item" onclick="toggleProfileMenu(false); logout();">Logout</button>
             </div>
         </div>
@@ -109,6 +110,17 @@
             </div>
         </section>
 
+        <!-- Co-Parents Section -->
+        <section id="coparents-section" class="dashboard-section" style="display: none;">
+            <h2 class="section-title">Co-Parents</h2>
+            <div class="subsection">
+                <p style="margin-bottom:16px; color:var(--text-secondary);">Parents managing this family with you</p>
+                <div id="coparentsGrid" style="display:grid; gap:12px;">
+                    <p>Loading co-parents...</p>
+                </div>
+            </div>
+        </section>
+
         <!-- Manage Section (Tasks + Rewards + Children consolidated) -->
         <section id="manage-section" class="dashboard-section" style="display: none;">
             <!-- Create Task Templates Sub-section -->
@@ -137,7 +149,6 @@
             <div class="subsection">
                 <div class="section-header">
                     <h3 class="subsection-title">Children Profiles</h3>
-                    <button class="secondary-btn" onclick="loadChildren()" style="font-size: 12px;">🔄 Refresh</button>
                 </div>
                 <div class="children-grid" id="childrenGrid">
                     <p>Loading children profiles...</p>
