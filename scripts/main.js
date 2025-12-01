@@ -182,6 +182,63 @@ if (auth) {
   // This runs on every page load to catch redirect completions
   handleRedirectSignIn()
 }
+
+// Profile menu toggle helper used by nav dropdowns
+function toggleProfileMenu(show) {
+  const menu = document.getElementById('profileMenu')
+  const btn = document.getElementById('profileBtn')
+  if (!menu || !btn) return
+  if (typeof show === 'boolean') {
+    if (show) {
+      menu.classList.add('show')
+      menu.setAttribute('aria-hidden', 'false')
+      btn.setAttribute('aria-expanded', 'true')
+    } else {
+      menu.classList.remove('show')
+      menu.setAttribute('aria-hidden', 'true')
+      btn.setAttribute('aria-expanded', 'false')
+    }
+    return
+  }
+  // toggle
+  const isShown = menu.classList.contains('show')
+  menu.classList.toggle('show', !isShown)
+  menu.setAttribute('aria-hidden', String(isShown))
+  btn.setAttribute('aria-expanded', String(!isShown))
+}
+
+// Close profile menu when clicking outside
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('profileMenu')
+  const btn = document.getElementById('profileBtn')
+  if (!menu || !btn) return
+  if (btn.contains(e.target)) return // clicking the button handled elsewhere
+  if (menu.contains(e.target)) return
+  menu.classList.remove('show')
+  menu.setAttribute('aria-hidden', 'true')
+  btn.setAttribute('aria-expanded', 'false')
+})
+
+// Attach listener to profile button when DOM ready (safe to call multiple times)
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const btn = document.getElementById('profileBtn')
+    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); toggleProfileMenu() })
+    // Fill profile initials from signed-in user if available
+    try {
+      const user = auth && auth.currentUser
+      if (user) {
+        const name = user.displayName || (user.email ? user.email.split('@')[0] : '')
+        const initial = name ? name.trim().charAt(0).toUpperCase() : '👤'
+        document.querySelectorAll('.profile-initial').forEach(el => { el.textContent = initial })
+      }
+    } catch (e) {
+      // ignore
+    }
+  } catch (e) {
+    console.warn('[TaskQuest] profile menu init failed:', e)
+  }
+})
 // Lightweight input modal (returns Promise<string|null>)
 function showInputModal(title, placeholder = '', defaultValue = '') {
   return new Promise((resolve) => {

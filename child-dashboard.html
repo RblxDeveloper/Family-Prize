@@ -15,12 +15,27 @@
             <span class="logo-icon">⭐</span>
             <span>TaskQuest</span>
         </div>
+
+        <!-- Center nav links (visible on desktop/tablet) -->
         <div class="nav-links">
             <a href="#tasks" class="nav-link active" onclick="navigateToSection('tasks'); return false;">Tasks</a>
             <a href="#rewards" class="nav-link" onclick="navigateToSection('rewards'); return false;">Rewards</a>
             <a href="#profile" class="nav-link" onclick="navigateToSection('profile'); return false;">Profile</a>
         </div>
-        <button class="logout-btn" onclick="logout()">Logout</button>
+
+        <!-- Profile avatar + dropdown -->
+        <div class="profile-dropdown" id="profileDropdown">
+            <button class="profile-btn" id="profileBtn" aria-haspopup="true" aria-expanded="false">
+                <span class="profile-initial">👤</span>
+            </button>
+            <div class="profile-menu" id="profileMenu" role="menu" aria-hidden="true">
+                <!-- Mobile-only links: duplicate of nav links for small screens -->
+                <a class="profile-menu-item mobile-only" href="#tasks" onclick="toggleProfileMenu(false); navigateToSection('tasks'); return false;">Tasks</a>
+                <a class="profile-menu-item mobile-only" href="#rewards" onclick="toggleProfileMenu(false); navigateToSection('rewards'); return false;">Rewards</a>
+                <a class="profile-menu-item mobile-only" href="#profile" onclick="toggleProfileMenu(false); navigateToSection('profile'); return false;">Profile</a>
+                <button class="profile-menu-item" onclick="toggleProfileMenu(false); logout();">Logout</button>
+            </div>
+        </div>
     </nav>
 
     <main class="child-dashboard-container">

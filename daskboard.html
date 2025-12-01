@@ -15,11 +15,22 @@
             <span class="logo-icon">⭐</span>
             <span>TaskQuest</span>
         </div>
+
         <div class="nav-links">
             <a href="parent-dashboard.html" class="nav-link">Parent Dashboard</a>
             <a href="child-dashboard.html" class="nav-link">Child Dashboard</a>
         </div>
-        <button class="logout-btn" onclick="logout()">Logout</button>
+
+        <div class="profile-dropdown" id="profileDropdown">
+            <button class="profile-btn" id="profileBtn" aria-haspopup="true" aria-expanded="false">
+                <span class="profile-initial">👤</span>
+            </button>
+            <div class="profile-menu" id="profileMenu" role="menu" aria-hidden="true">
+                <a class="profile-menu-item mobile-only" href="parent-dashboard.html" onclick="toggleProfileMenu(false);">Parent Dashboard</a>
+                <a class="profile-menu-item mobile-only" href="child-dashboard.html" onclick="toggleProfileMenu(false);">Child Dashboard</a>
+                <button class="profile-menu-item" onclick="toggleProfileMenu(false); logout();">Logout</button>
+            </div>
+        </div>
     </nav>
 
     <main class="dashboard-container">
