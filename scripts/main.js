@@ -3800,6 +3800,7 @@ async function requestParentAccessByCode(code) {
 // Requester-side: watch for approved parent invite requests and self-apply familyCode
 function setupParentInviteOutcomeListener() {
   const user = auth.currentUser
+  console.log('[TaskQuest] setupParentInviteOutcomeListener called for user:', user?.uid)
   if (!user) return () => {}
   let unsubscribe = null
   try {
@@ -3809,27 +3810,39 @@ function setupParentInviteOutcomeListener() {
       .where('status', '==', 'approved')
       .onSnapshot(async (snap) => {
         try {
+          console.log('[TaskQuest] parentInvite outcome snapshot, approved docs:', snap.size)
           if (snap.empty) return
           // If the user already has a family code, nothing to do
           const me = await db.collection('users').doc(user.uid).get()
           const hasFamily = me.exists && !!me.data().familyCode
-          if (hasFamily) return
+          console.log('[TaskQuest] My current familyCode:', me.data()?.familyCode, 'hasFamily:', hasFamily)
+          if (hasFamily) {
+            console.log('[TaskQuest] Already have familyCode, skipping self-apply')
+            return
+          }
           // Use the latest approved request
           const d = snap.docs[0].data()
+          console.log('[TaskQuest] Approved request data:', d)
           const code = d.code || null
           let familyCode = null
           if (code) {
             const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
             familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
+            console.log('[TaskQuest] familyCode from parentInviteCodes:', familyCode)
           }
           // Fallback: fetch owner's familyCode if code record lacks it
           if (!familyCode && d.targetOwnerId) {
             try {
               const ownerDoc = await db.collection('users').doc(d.targetOwnerId).get()
               if (ownerDoc.exists) familyCode = ownerDoc.data().familyCode || null
+              console.log('[TaskQuest] familyCode from owner doc:', familyCode)
             } catch(e) { /* ignore */ }
           }
-          if (!familyCode) return
+          if (!familyCode) {
+            console.warn('[TaskQuest] Could not determine familyCode to self-apply')
+            return
+          }
+          console.log('[TaskQuest] Updating my user doc with familyCode:', familyCode)
           await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
           showNotification('You have been linked to this family as a parent.', 'success')
           // Optionally mark request as completed/acknowledged by requester
@@ -4056,11 +4069,13 @@ async function loadParentProfile() {
 async function loadCoparents() {
   try {
     const user = auth.currentUser
+    console.log('[TaskQuest] loadCoparents() called, user:', user?.uid)
     if (!user) { showNotification('Please sign in.', 'error'); return }
     
     const userDoc = await db.collection('users').doc(user.uid).get()
-    if (!userDoc.exists) return
+    if (!userDoc.exists) { console.warn('[TaskQuest] loadCoparents: user doc not found'); return }
     const familyCode = userDoc.data().familyCode
+    console.log('[TaskQuest] loadCoparents: my familyCode =', familyCode)
     if (!familyCode) { 
       document.getElementById('coparentsGrid').innerHTML = '<p>No family code set.</p>'
       return 
@@ -4098,12 +4113,15 @@ async function loadCoparents() {
 
     // Get all parents in the family (excluding self)
     const parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
+    console.log('[TaskQuest] loadCoparents: found', parentsSnap.size, 'parents with familyCode =', familyCode)
+    parentsSnap.docs.forEach(d => console.log('[TaskQuest] parent doc:', d.id, d.data().name, d.data().familyCode, d.data().role))
     const parents = []
     parentsSnap.forEach(doc => {
       if (doc.id !== user.uid) {
         parents.push({ id: doc.id, ...doc.data() })
       }
     })
+    console.log('[TaskQuest] loadCoparents: after excluding self, parents count =', parents.length)
 
     const gridEl = document.getElementById('coparentsGrid')
     if (!gridEl) return
