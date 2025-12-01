@@ -1970,6 +1970,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // No demo seeding — app runs against Firebase only.
 
   // Check if user is authenticated
+  let __authInitialized = false
   auth.onAuthStateChanged((user) => {
     if (user) {
       const currentPage = window.location.pathname.split("/").pop()
@@ -2025,6 +2026,12 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
           console.warn('[TaskQuest] Failed to attach children listener on load:', e)
         }
+        try {
+          if (window.parentInviteOutcomeUnsub) { try { window.parentInviteOutcomeUnsub() } catch(e){}; window.parentInviteOutcomeUnsub = null }
+          window.parentInviteOutcomeUnsub = setupParentInviteOutcomeListener()
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to attach parentInvite outcome listener:', e)
+        }
       }
     } else {
       // User not logged in, redirect to index if not already there
@@ -2033,6 +2040,7 @@ document.addEventListener("DOMContentLoaded", () => {
         navigateTo("index.html")
       }
     }
+    __authInitialized = true
   })
 })
 
@@ -2490,11 +2498,22 @@ async function loadOngoingTasks() {
       .where("status", "==", "in-progress")
       .get()
 
+    // Build cache key and avoid redundant renders
+    try { window.__cache = window.__cache || {} } catch(e) {}
+    const snapKeyBase = submissionsSnapshot.docs.map(d => {
+      const x = d.data();
+      return `${x.userId||''}:${x.taskId||''}:${x.createdAt && x.createdAt.seconds ? x.createdAt.seconds : 0}`
+    }).sort().join('|')
+
     if (submissionsSnapshot.empty) {
       grid.innerHTML = "<p>No on-going tasks at the moment. 😴</p>"
       return
     }
 
+    if (window.__cache.ongoingKey && window.__cache.ongoingKey === snapKeyBase) {
+      return
+    }
+    window.__cache.ongoingKey = snapKeyBase
     grid.innerHTML = ""
 
     // De-duplicate by userId+taskId; keep the newest by createdAt
@@ -2646,6 +2665,10 @@ async function loadChildren() {
       console.log('[TaskQuest] Child doc:', { id: doc.id, ...doc.data() })
     })
 
+    // Build a lightweight key to detect changes and avoid flicker
+    try { window.__cache = window.__cache || {} } catch(e) {}
+    const snapshotKey = childrenSnapshot.docs.map(d => `${d.id}:${(d.data().points||0)}:${(d.data().name||'')}`).join('|')
+
     if (childrenSnapshot.empty) {
       childrenGrid.innerHTML = `
         <div class="empty-state">
@@ -2655,6 +2678,12 @@ async function loadChildren() {
       `
       return
     }
+
+    // Avoid re-rendering identical content to reduce flash
+    if (window.__cache.childrenKey && window.__cache.childrenKey === snapshotKey) {
+      return
+    }
+    window.__cache.childrenKey = snapshotKey
 
     childrenGrid.innerHTML = ""
 
@@ -2903,11 +2932,19 @@ async function loadParentTasks() {
       .orderBy("createdAt", "desc")
       .get()
 
+    // Cache key to avoid flicker when nothing changed
+    try { window.__cache = window.__cache || {} } catch(e) {}
+    const tasksKey = tasksSnapshot.docs.map(d => d.id).sort().join('|')
+
     if (tasksSnapshot.empty) {
       tasksGrid.innerHTML = "<p>No tasks created yet. Click 'Create New Task' to add one.</p>"
       return
     }
 
+    if (window.__cache.parentTasksKey && window.__cache.parentTasksKey === tasksKey) {
+      return
+    }
+    window.__cache.parentTasksKey = tasksKey
     tasksGrid.innerHTML = ""
 
     // Determine number of children in this family so we can detect when all children completed a task
@@ -3700,6 +3737,57 @@ async function requestParentAccessByCode(code) {
   }
 }
 
+// Requester-side: watch for approved parent invite requests and self-apply familyCode
+function setupParentInviteOutcomeListener() {
+  const user = auth.currentUser
+  if (!user) return () => {}
+  let unsubscribe = null
+  try {
+    unsubscribe = db
+      .collection('parentInviteRequests')
+      .where('requesterId', '==', user.uid)
+      .where('status', '==', 'approved')
+      .onSnapshot(async (snap) => {
+        try {
+          if (snap.empty) return
+          // If the user already has a family code, nothing to do
+          const me = await db.collection('users').doc(user.uid).get()
+          const hasFamily = me.exists && !!me.data().familyCode
+          if (hasFamily) return
+          // Use the latest approved request
+          const d = snap.docs[0].data()
+          const code = d.code
+          if (!code) return
+          // Lookup code to fetch familyCode
+          const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
+          const familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
+          if (!familyCode) return
+          await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
+          showNotification('You have been linked as a co-parent.', 'success')
+          // Optionally mark request as completed/acknowledged by requester
+          try { await db.collection('parentInviteRequests').doc(snap.docs[0].id).update({ acknowledgedByRequesterAt: firebase.firestore.FieldValue.serverTimestamp() }) } catch(e) {}
+          // Refresh co-parents and profile if on parent dashboard
+          try {
+            if (window.location.pathname.includes('parent-dashboard')) {
+              loadCoparents(); loadParentProfile();
+            }
+          } catch(e) {}
+        } catch (e) {
+          console.warn('[TaskQuest] setupParentInviteOutcomeListener apply error:', e)
+        }
+      }, (err) => {
+        if (err && err.code === 'permission-denied') {
+          console.debug('[TaskQuest] parentInvite outcome listener permission denied')
+        } else {
+          console.warn('[TaskQuest] parentInvite outcome listener error:', err)
+        }
+      })
+  } catch (e) {
+    console.warn('[TaskQuest] Could not attach parentInvite outcome listener:', e)
+  }
+  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
+}
+
 // Owner: view incoming parent requests
 async function viewParentRequests() {
   try {
@@ -3752,11 +3840,14 @@ async function approveParentRequest(requestId) {
     const owner = auth.currentUser
     if (!owner) { showNotification('Please sign in as a parent to approve requests.', 'error'); return }
 
+    // Step 1: mark request approved in a transaction (authoritative)
+    let requesterId = null
     await db.runTransaction(async (tx) => {
       const reqDoc = await tx.get(reqRef)
       if (!reqDoc.exists) throw new Error('Request not found')
       const data = reqDoc.data()
       if (data.status !== 'pending') throw new Error('Request already handled')
+      requesterId = data.requesterId
 
       const ownerRef = db.collection('users').doc(owner.uid)
       const ownerDoc = await tx.get(ownerRef)
@@ -3764,17 +3855,27 @@ async function approveParentRequest(requestId) {
       const familyCode = ownerDoc.data().familyCode || null
       if (!familyCode) throw new Error('Owner has no family code')
 
-      const requesterRef = db.collection('users').doc(data.requesterId)
-      const requesterDoc = await tx.get(requesterRef)
-      if (!requesterDoc.exists) throw new Error('Requester profile not found')
-
-      // Update both request status and the requester user doc atomically
+      // Update request status only (rules always allow targetOwner to update the request)
       tx.update(reqRef, { status: 'approved', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
-      // Ensure co-parent role is explicitly set so they appear under co-parents list
-      tx.update(requesterRef, { familyCode: familyCode, role: 'parent' })
     })
 
     showNotification('Parent request approved — co-parent added.', 'success')
+
+    // Step 2: best-effort: attempt to set requester.user.familyCode (may be blocked by rules)
+    try {
+      const ownerDoc = await db.collection('users').doc(owner.uid).get()
+      const familyCode = ownerDoc.exists ? (ownerDoc.data().familyCode || null) : null
+      if (requesterId && familyCode) {
+        await db.collection('users').doc(requesterId).update({ familyCode: familyCode, role: 'parent' })
+      }
+    } catch (e) {
+      const code = e && (e.code || '').toString()
+      if (code === 'permission-denied') {
+        console.debug('[TaskQuest] Owner cannot update other parent doc by rules; requester listener will self-apply family code.')
+      } else {
+        console.warn('[TaskQuest] Non-critical requester update error:', e)
+      }
+    }
 
     // Reload profile to reflect updated co-parents count
     setTimeout(() => { 
