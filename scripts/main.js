@@ -3776,22 +3776,7 @@ async function requestParentAccessByCode(code) {
     const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
     if (!codeDoc.exists) { showNotification('Invite code not found.', 'error'); return }
     const ownerId = codeDoc.data().ownerId
-    const ownerFamilyCode = codeDoc.data().familyCode
     if (ownerId === user.uid) { showNotification('This code is your own. Share it with other parents.', 'info'); return }
-
-    // Check if user already has a familyCode (their own family)
-    const myDoc = await db.collection('users').doc(user.uid).get()
-    const myFamilyCode = myDoc.exists ? myDoc.data().familyCode : null
-    
-    if (myFamilyCode && myFamilyCode !== ownerFamilyCode) {
-      // User is leaving their own family to join another
-      const confirmLeave = confirm('You currently have your own family. Joining this family will remove you from your current family. Continue?')
-      if (!confirmLeave) return
-      
-      // Clear own familyCode so the owner can set it when approving
-      console.log('[TaskQuest] Clearing own familyCode to join new family')
-      await db.collection('users').doc(user.uid).update({ familyCode: null })
-    }
 
     // create a parentInviteRequests document
     await db.collection('parentInviteRequests').add({
@@ -3805,7 +3790,7 @@ async function requestParentAccessByCode(code) {
       respondedAt: null
     })
 
-    showNotification('Request sent to the code owner. They will be notified.', 'success')
+    showNotification('Request sent! Once approved, you\'ll be linked to this family.', 'success')
   } catch (error) {
     console.error('[TaskQuest] requestParentAccessByCode error:', error)
     showNotification('Failed to request parent access: ' + (error.message || String(error)), 'error')
@@ -4144,38 +4129,62 @@ async function loadCoparents() {
       return null
     }
 
-    const ownerId = await determineFamilyOwnerId(familyCode)
-    const isOwner = ownerId === user.uid
-
     // Get all parents in the family (excluding self)
     const parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
-    console.log('[TaskQuest] loadCoparents: found', parentsSnap.size, 'parents with familyCode =', familyCode)
-    parentsSnap.docs.forEach(d => console.log('[TaskQuest] parent doc:', d.id, d.data().name, d.data().familyCode, d.data().role))
     const parents = []
     parentsSnap.forEach(doc => {
       if (doc.id !== user.uid) {
         parents.push({ id: doc.id, ...doc.data() })
       }
     })
-    console.log('[TaskQuest] loadCoparents: after excluding self, parents count =', parents.length)
 
     const gridEl = document.getElementById('coparentsGrid')
     if (!gridEl) return
 
     if (parents.length === 0) {
-      gridEl.innerHTML = '<p>No parents linked yet. Share your invite code to add guardians.</p>'
+      gridEl.innerHTML = '<p style="padding:16px; text-align:center; color:var(--text-secondary);">No parents linked yet. Share your invite code to add guardians.</p>'
       return
     }
+
+    // Determine if current user is the family owner
+    let isOwner = false
+    try {
+      const codeSnap = await db.collection('parentInviteCodes').where('familyCode', '==', familyCode).limit(1).get()
+      if (!codeSnap.empty && codeSnap.docs[0].data().ownerId === user.uid) {
+        isOwner = true
+      }
+    } catch(e) {}
 
     let html = ''
     parents.forEach(parent => {
       const name = parent.name || parent.email?.split('@')[0] || 'Parent'
       const email = parent.email || 'N/A'
-      const controls = isOwner ? `<button class='secondary-btn' style='font-size:12px; padding:6px 10px;' onclick="removeCoparent('${parent.id}')">Remove</button>` : `<span style='font-size:12px; color:var(--text-secondary);'>Parent</span>`
-      html += `<div style="padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      const createdAt = parent.createdAt?.toDate ? new Date(parent.createdAt.toDate()).toLocaleDateString() : 'Unknown'
+      
+      let controls = ''
+      if (isOwner) {
+        controls = `<div style="display:flex; gap:8px;">
+          <button class='secondary-btn' style='font-size:12px; padding:6px 10px; flex:1;' onclick="viewParentDetails('${parent.id}')">View</button>
+          <button class='secondary-btn danger' style='font-size:12px; padding:6px 10px; flex:1; color:#e74c3c;' onclick="removeCoparent('${parent.id}')" title="Remove from family">Remove</button>
+        </div>`
+      } else {
+        controls = `<div style="font-size:12px; color:var(--text-secondary); padding:6px; text-align:center;">Co-Parent</div>`
+      }
+
+      html += `<div style="
+        padding:16px; 
+        border:1px solid var(--border); 
+        border-radius:var(--radius); 
+        background:var(--surface);
+        display:grid;
+        grid-template-columns: 1fr 140px;
+        gap:12px;
+        align-items:start;
+      ">
         <div>
-          <div style="font-weight:600;">${escapeHtml(name)}</div>
-          <div style="font-size:12px; color:var(--text-secondary);">${escapeHtml(email)}</div>
+          <div style="font-weight:600; font-size:16px;">${escapeHtml(name)}</div>
+          <div style="font-size:13px; color:var(--text-secondary); margin-top:2px;">${escapeHtml(email)}</div>
+          <div style="font-size:12px; color:var(--text-secondary); margin-top:6px;">Joined: ${createdAt}</div>
         </div>
         <div>${controls}</div>
       </div>`
@@ -4188,18 +4197,19 @@ async function loadCoparents() {
   }
 }
 
-// Owner control: remove a parent from the family (sets their familyCode to null)
 async function removeCoparent(parentId) {
   try {
-    const confirm = await showConfirmModal('Remove Parent', 'Are you sure you want to remove this parent from your family?')
-    if (!confirm) return
     const owner = auth.currentUser
     if (!owner) { showNotification('Please sign in as a parent.', 'error'); return }
+    
+    const result = confirm('Remove this parent from the family?')
+    if (!result) return
+
     const ownerDoc = await db.collection('users').doc(owner.uid).get()
     const familyCode = ownerDoc.exists ? (ownerDoc.data().familyCode || null) : null
     if (!familyCode) { showNotification('Your account has no family code.', 'error'); return }
 
-    // Attempt the update; if rules block it, guide the user.
+    // Attempt the update
     await db.collection('users').doc(parentId).update({ familyCode: null, removedBy: owner.uid, removedAt: firebase.firestore.FieldValue.serverTimestamp() })
     showNotification('Parent removed from family.', 'success')
     setTimeout(() => { loadCoparents(); loadParentProfile() }, 300)
@@ -4207,12 +4217,59 @@ async function removeCoparent(parentId) {
     console.error('[TaskQuest] removeCoparent error:', error)
     const code = (error && error.code) || ''
     if (code === 'permission-denied') {
-      showNotification('Permission denied removing parent. Update Firestore rules to allow owners to clear familyCode for another parent.', 'error')
-      console.error('[TaskQuest] To allow removal, add this rule under match /users/{userId} -> allow update OR clause:\n' +
-        "(isSignedIn() && isParent() && resource.data.role == 'parent' && resource.data.familyCode == getUserData().familyCode && request.resource.data.familyCode == null)" )
+      showNotification('Permission denied. Ensure Firestore rules allow owner to remove parents.', 'error')
     } else {
       showNotification('Failed to remove parent: ' + (error.message || String(error)), 'error')
     }
+  }
+}
+
+async function viewParentDetails(parentId) {
+  try {
+    const parentDoc = await db.collection('users').doc(parentId).get()
+    if (!parentDoc.exists) {
+      showNotification('Parent not found.', 'error')
+      return
+    }
+    
+    const data = parentDoc.data()
+    const name = data.name || data.email?.split('@')[0] || 'Parent'
+    const email = data.email || 'N/A'
+    const createdAt = data.createdAt?.toDate ? new Date(data.createdAt.toDate()).toLocaleDateString() : 'Unknown'
+    
+    const modal = document.createElement('div')
+    modal.className = 'modal'
+    modal.style.display = 'block'
+    const content = document.createElement('div')
+    content.className = 'modal-content'
+    content.style.maxWidth = '450px'
+    content.innerHTML = `
+      <span class="close">&times;</span>
+      <h3>Parent Details</h3>
+      <div style="margin-top:16px;">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; font-weight:600;">Name</label>
+          <div style="font-size:16px; margin-top:4px;">${escapeHtml(name)}</div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; font-weight:600;">Email</label>
+          <div style="font-size:16px; margin-top:4px;">${escapeHtml(email)}</div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px; color:var(--text-secondary); text-transform:uppercase; font-weight:600;">Joined</label>
+          <div style="font-size:16px; margin-top:4px;">${createdAt}</div>
+        </div>
+      </div>
+    `
+    modal.appendChild(content)
+    document.body.appendChild(modal)
+    content.querySelector('.close').addEventListener('click', () => { try { document.body.removeChild(modal) } catch(e){} })
+    modal.addEventListener('click', (e) => { if (e.target === modal) { try { document.body.removeChild(modal) } catch(e){} } })
+  } catch (error) {
+    console.error('[TaskQuest] viewParentDetails error:', error)
+    showNotification('Failed to load parent details.', 'error')
+  }
+}
   }
 }
 
