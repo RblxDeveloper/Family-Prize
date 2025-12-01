@@ -3325,6 +3325,10 @@ async function declineFamilyRequest(requestId) {
 
     showNotification("Request declined", "success")
     loadPendingFamilyRequests()
+    // Refresh children list in case the decline affects the UI
+    setTimeout(() => {
+      loadChildren()
+    }, 500)
   } catch (error) {
     console.error("[TaskQuest] Decline request error:", error)
     showNotification("Failed to decline request: " + error.message, "error")
