@@ -41,9 +41,14 @@ service cloud.firestore {
 
       // Update: users can update their own profile; parents can set familyCode on children
       // Allow parent to write familyCode and displayName to unlinked children (for approval flow)
-      allow update: if (isSignedIn() && request.auth.uid == userId) || 
-                       (isSignedIn() && isParent() && resource.data.role == 'child' && 
-                        (resource.data.familyCode == null || resource.data.familyCode == getUserData().familyCode));
+       // Allow parents to update other parents' familyCode (for co-parent approval flow)
+       allow update: if (isSignedIn() && request.auth.uid == userId) || 
+                          (isSignedIn() && isParent() && resource.data.role == 'child' && 
+                           (resource.data.familyCode == null || resource.data.familyCode == getUserData().familyCode)) ||
+                          (isSignedIn() && isParent() && resource.data.role == 'parent' &&
+                           request.resource.data.familyCode != null &&
+                           !('familyCode' in resource.data) &&
+                           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['familyCode']));
 
       // Delete: not allowed
       allow delete: if false;

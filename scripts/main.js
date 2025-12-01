@@ -198,7 +198,8 @@ if (auth) {
     }
     
     // If user is logged in and we're on the login page, redirect
-    if (user && window.location.pathname.includes('index.html')) {
+      // But skip if we're processing a redirect sign-in to avoid interference
+      if (user && window.location.pathname.includes('index.html') && !isProcessingRedirect) {
       console.log('[TaskQuest] User already logged in, redirecting...')
       // Determine if parent or child by checking their role
       db.collection('users').doc(user.uid).get().then((doc) => {
