@@ -1567,6 +1567,8 @@ document.addEventListener("DOMContentLoaded", () => {
         loadParentRewards()
         // Keep parent tasks view in sync in real-time
         setupParentTasksListener()
+        // Keep ongoing tasks in sync (auto-refresh when status changes)
+        setupOngoingTasksListener()
         initializeSectionVisibility()
         displayFamilyCode()
         try {
@@ -2024,6 +2026,8 @@ async function loadPendingApprovals() {
   }
 }
 
+let ongoingTasksUnsubscribe = null
+
 async function loadOngoingTasks() {
   try {
     const grid = document.getElementById("ongoingTasksGrid")
@@ -2080,17 +2084,24 @@ async function loadOngoingTasks() {
 
       const taskCard = document.createElement("div")
       taskCard.className = "task-verification-card ongoing-card"
+      taskCard.style.cssText = `
+        padding: 16px;
+        border-radius: 8px;
+        background: #f9f9f9;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 8px;
+      `
       taskCard.innerHTML = `
-        <div class="task-header">
-          <h3>⏳ ${task.title}</h3>
-          <span class="points-badge">+${task.points} pts</span>
+        <div class="task-header" style="margin-bottom: 12px;">
+          <h3 style="font-size: 14px; margin: 0 0 8px 0;">⏳ ${task.title}</h3>
+          <span class="points-badge" style="font-size: 12px; background: #f0f0f0; padding: 4px 8px; border-radius: 4px;">+${task.points} pts</span>
         </div>
-        <div class="child-info">
-          <span class="child-name">👤 ${childName}</span>
-          <span class="submission-time">Started ${timestamp}</span>
+        <div class="child-info" style="margin-bottom: 10px; font-size: 12px;">
+          <span class="child-name" style="display: block; margin-bottom: 4px;">👤 ${childName}</span>
+          <span class="submission-time" style="color: #666; font-size: 11px;">Started ${timestamp}</span>
         </div>
-        <div class="status-message">
-          <p>Your child is currently working on this task. They'll submit photos for review when they're done.</p>
+        <div class="status-message" style="padding: 10px; background: #e8f4f8; border-radius: 4px; font-size: 12px; color: #333;">
+          <p style="margin: 0;">Your child is working on this task. Waiting for submission...</p>
         </div>
       `
       grid.appendChild(taskCard)
@@ -2101,6 +2112,34 @@ async function loadOngoingTasks() {
     if (grid) grid.innerHTML = "<p>Error loading on-going tasks.</p>"
   }
 }
+
+// Set up real-time listener for ongoing tasks so parent sees when submissions change status
+function setupOngoingTasksListener() {
+  try {
+    const user = auth.currentUser
+    if (!user || !db) return
+    getFamilyCodeForUser(user).then((familyCode) => {
+      if (!familyCode) return
+
+      if (ongoingTasksUnsubscribe) {
+        try { ongoingTasksUnsubscribe(); } catch (e) {}
+        ongoingTasksUnsubscribe = null
+      }
+
+      ongoingTasksUnsubscribe = db.collection('submissions')
+        .where('familyCode', '==', familyCode)
+        .where('status', 'in', ['in-progress', 'pending', 'approved', 'declined'])
+        .onSnapshot(() => {
+          loadOngoingTasks().catch(() => {})
+        }, (err) => {
+          console.warn('[TaskQuest] ongoing tasks listener error:', err)
+        })
+    })
+  } catch (error) {
+    console.error('[TaskQuest] setupOngoingTasksListener error:', error)
+  }
+}
+
 
 async function loadChildren() {
   try {

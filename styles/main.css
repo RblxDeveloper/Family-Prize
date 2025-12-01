@@ -1841,3 +1841,303 @@ html {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--secondary);
 }
+
+/* ============================================
+   RESPONSIVE IMPROVEMENTS FOR ALL DEVICES
+   ============================================ */
+
+/* Mobile-first: base styles for small screens */
+@media (max-width: 480px) {
+  .child-dashboard-container {
+    padding: 16px 12px;
+  }
+
+  .points-card {
+    padding: 24px 16px;
+    gap: 16px;
+  }
+
+  .points-icon {
+    font-size: 40px;
+  }
+
+  .points-value {
+    font-size: 36px;
+  }
+
+  .points-label {
+    font-size: 11px;
+  }
+
+  .child-section {
+    padding: 20px 16px;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-size: 18px;
+  }
+
+  .child-tasks-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .child-task-card {
+    padding: 16px;
+  }
+
+  .upload-label {
+    padding: 32px 16px;
+  }
+
+  .upload-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  .modal-content {
+    width: 95%;
+    margin: 20% 2.5%;
+    padding: 20px;
+    border-radius: 12px;
+  }
+
+  .upload-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .upload-step h3 {
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+
+  .profile-card {
+    padding: 20px 16px;
+  }
+
+  .profile-header {
+    gap: 12px;
+    padding-bottom: 16px;
+  }
+
+  .profile-avatar {
+    font-size: 40px;
+  }
+
+  .profile-info h3 {
+    font-size: 18px;
+  }
+
+  .profile-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .activity-section {
+    padding: 20px 16px;
+  }
+
+  .activity-section h3 {
+    font-size: 18px;
+    margin-bottom: 16px;
+  }
+
+  #activityList {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .activity-card {
+    padding: 12px !important;
+  }
+
+  .card-header {
+    font-size: 13px;
+  }
+
+  .card-desc {
+    font-size: 11px;
+  }
+
+  .history-photo {
+    max-height: 80px !important;
+  }
+
+  .family-code-input-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .family-code-input-row input {
+    width: 100%;
+  }
+
+  .family-code-input-row button {
+    width: 100%;
+  }
+}
+
+/* Tablet: 481px to 768px */
+@media (min-width: 481px) and (max-width: 768px) {
+  .child-dashboard-container {
+    padding: 24px 16px;
+  }
+
+  .points-card {
+    padding: 32px 24px;
+    gap: 24px;
+  }
+
+  .points-icon {
+    font-size: 48px;
+  }
+
+  .points-value {
+    font-size: 44px;
+  }
+
+  .child-section {
+    padding: 24px 16px;
+    margin-bottom: 24px;
+  }
+
+  .child-tasks-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .child-task-card {
+    padding: 20px;
+  }
+
+  .upload-label {
+    padding: 40px 20px;
+  }
+
+  .modal-content {
+    width: 90%;
+    margin: 15% 5%;
+    padding: 24px;
+  }
+
+  .upload-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  .profile-stats {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .activity-section {
+    padding: 24px 16px;
+  }
+
+  #activityList {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .history-photo {
+    max-height: 90px !important;
+  }
+
+  .family-code-input-row {
+    flex-direction: row;
+  }
+}
+
+/* Desktop: 769px and above */
+@media (min-width: 769px) {
+  .child-dashboard-container {
+    padding: 32px 20px;
+  }
+
+  .child-tasks-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+
+  .child-task-card {
+    padding: 24px;
+  }
+
+  .upload-label {
+    padding: 48px 24px;
+  }
+
+  .modal-content {
+    width: 85%;
+    max-width: 600px;
+    margin: 10% auto;
+    padding: 32px;
+  }
+
+  .upload-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .profile-stats {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .activity-section {
+    padding: 32px;
+  }
+
+  #activityList {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  .history-photo {
+    max-height: 100px !important;
+  }
+}
+
+/* Fixed image sizing across all history cards */
+.history-photo {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.photo-row {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.photo-row img {
+  flex: 1;
+  max-width: 50%;
+}
+
+/* Activity card consistency */
+.activity-card {
+  overflow: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Modal responsiveness */
+.modal-content {
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
