@@ -1280,6 +1280,8 @@ async function signInWithGoogle() {
     showNotification('Google Sign-In failed: ' + (error?.message || String(error)), 'error')
   }
 }
+// Ensure global accessibility
+window.signInWithGoogle = signInWithGoogle
 
 // Dedicated handler for redirect sign-in results (called on every page load)
 async function handleRedirectSignIn() {
@@ -1586,6 +1588,8 @@ async function signInWithApple() {
     showNotification('Apple Sign-In failed: ' + (error?.message || String(error)), 'error')
   }
 }
+// Ensure global accessibility
+window.signInWithApple = signInWithApple
 
 // Centralized processing for an Apple sign-in result (popup or redirect)
 async function processAppleSignInResult(result) {
