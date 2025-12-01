@@ -126,6 +126,43 @@ function showToast(message, type = 'success', duration = 4000) {
 // SESSION & AUTH STATE MANAGEMENT
 // ==========================================
 
+// Flag to prevent redirect loop during sign-in redirect processing
+let isProcessingRedirect = false
+
+// Real-time listener for parent profile updates (co-parents sync)
+let parentProfileUnsubscribe = null
+
+function setupParentProfileListener(userId) {
+  // Clean up previous listener if exists
+  if (parentProfileUnsubscribe) {
+    try { parentProfileUnsubscribe() } catch (e) {}
+  }
+  
+  // Only set up listener on parent dashboard
+  if (!window.location.pathname.includes('parent-dashboard')) return
+  
+  console.log('[TaskQuest] Setting up real-time parent profile listener for:', userId)
+  parentProfileUnsubscribe = db.collection('users').doc(userId).onSnapshot(
+    (doc) => {
+      if (!doc.exists) return
+      const newData = doc.data()
+      console.log('[TaskQuest] User doc changed, familyCode:', newData.familyCode)
+      
+      // Reload profile if familyCode changed (means co-parent was approved)
+      if (typeof loadParentProfile === 'function' && typeof loadCoparents === 'function') {
+        loadParentProfile()
+        // Reload co-parents list to reflect new co-parent count
+        if (document.getElementById('coparentsGrid')) {
+          loadCoparents()
+        }
+      }
+    },
+    (error) => {
+      console.warn('[TaskQuest] Parent profile listener error:', error)
+    }
+  )
+}
+
 // Set up auth state persistence listener
 if (auth) {
   auth.onAuthStateChanged((user) => {
@@ -134,14 +171,19 @@ if (auth) {
       return // Don't restore session for this tab
     }
     
-    // If user exists, check if their account has been disabled by a parent
+    // If user exists, set up real-time listeners and check if their account has been disabled by a parent
     if (user) {
-        db.collection('users').doc(user.uid).get().then((doc) => {
-          if (doc.exists) {
-            const data = doc.data()
-            // Cache loaded user data for quick use by listeners
-            try { window.loadedUserData = data } catch (e) {}
-            if (data.disabled === true && data.role === 'child') {
+      // Set up real-time profile listener for co-parents sync
+      if (window.location.pathname.includes('parent-dashboard')) {
+        setupParentProfileListener(user.uid)
+      }
+      
+      db.collection('users').doc(user.uid).get().then((doc) => {
+        if (doc.exists) {
+          const data = doc.data()
+          // Cache loaded user data for quick use by listeners
+          try { window.loadedUserData = data } catch (e) {}
+          if (data.disabled === true && data.role === 'child') {
             showNotification('This account has been disabled by a parent. You have been signed out.', 'error')
             // Force sign out for disabled child accounts
             auth.signOut().then(() => {
@@ -171,7 +213,8 @@ if (auth) {
     }
     
     // If user is NOT logged in but we're on a dashboard, redirect to login
-    if (!user && (window.location.pathname.includes('parent-dashboard') || window.location.pathname.includes('child-dashboard'))) {
+    // BUT: Don't redirect if we're processing a redirect sign-in result (to avoid redirect loop)
+    if (!user && !isProcessingRedirect && (window.location.pathname.includes('parent-dashboard') || window.location.pathname.includes('child-dashboard'))) {
       console.log('[TaskQuest] User not logged in, redirecting to login...')
       sessionStorage.removeItem('loggedOut')
       navigateTo('index.html')
@@ -180,7 +223,8 @@ if (auth) {
 
   // Handle redirect sign-in results (if user used redirect fallback)
   // This runs on every page load to catch redirect completions
-  handleRedirectSignIn()
+  isProcessingRedirect = true
+  handleRedirectSignIn().finally(() => { isProcessingRedirect = false })
 }
 
 // Profile menu toggle helper used by nav dropdowns
@@ -3539,10 +3583,12 @@ async function viewParentRequests() {
     if (!user) { showNotification('Please sign in as a parent to view requests.', 'error'); return }
     const snapshot = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).get()
     if (snapshot.empty) { showNotification('No pending parent requests.', 'info'); return }
-    // Build HTML list with more details
+    // Build HTML list with more details - only show pending status
     let listHtml = ''
     snapshot.forEach(doc => {
       const data = doc.data()
+      // Only show pending requests in the modal
+      if (data.status !== 'pending') return
       const createdDate = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleDateString() : 'N/A'
       listHtml += `<div style="padding:12px; margin-bottom:8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface);">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
@@ -3558,6 +3604,7 @@ async function viewParentRequests() {
         </div>
       </div>`
     })
+    if (!listHtml) { showNotification('No pending parent requests.', 'info'); return }
     // show in modal
     const modal = document.createElement('div')
     modal.className = 'modal'
@@ -3592,7 +3639,17 @@ async function approveParentRequest(requestId) {
     await db.collection('users').doc(data.requesterId).update({ familyCode: familyCode })
     showNotification('Parent request approved — co-parent added.', 'success')
     // Reload profile to reflect updated co-parents count
-    setTimeout(() => { if (typeof loadParentProfile === 'function') loadParentProfile() }, 500)
+    setTimeout(() => { 
+      if (typeof loadParentProfile === 'function') loadParentProfile()
+      // Close and refresh the modal
+      const modals = document.querySelectorAll('.modal')
+      if (modals.length > 0) {
+        const lastModal = modals[modals.length - 1]
+        try { lastModal.parentNode.removeChild(lastModal) } catch(e){}
+      }
+      // Reopen to show updated list
+      setTimeout(() => { viewParentRequests() }, 300)
+    }, 500)
   } catch (error) {
     console.error('[TaskQuest] approveParentRequest error:', error)
     showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
@@ -3603,6 +3660,14 @@ async function declineParentRequest(requestId) {
   try {
     await db.collection('parentInviteRequests').doc(requestId).update({ status: 'declined', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
     showNotification('Parent request declined.', 'success')
+    // Close and refresh the modal
+    const modals = document.querySelectorAll('.modal')
+    if (modals.length > 0) {
+      const lastModal = modals[modals.length - 1]
+      try { lastModal.parentNode.removeChild(lastModal) } catch(e){}
+    }
+    // Reopen to show updated list
+    setTimeout(() => { viewParentRequests() }, 300)
   } catch (error) {
     console.error('[TaskQuest] declineParentRequest error:', error)
     showNotification('Failed to decline request: ' + (error.message || String(error)), 'error')

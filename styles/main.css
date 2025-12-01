@@ -274,11 +274,12 @@ body {
   transform: translateX(-50%);
   position: absolute;
   bottom: -6px;
+  max-width: 60px;
 }
 
 .nav-link:hover::after,
 .nav-link.active::after {
-  width: 100%;
+  width: 60px;
   left: 50%;
   transform: translateX(-50%);
 }
