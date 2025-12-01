@@ -22,6 +22,8 @@ const firebaseConfig = {
 let db, storage, auth
 // Unsubscribe handle for child profile realtime watcher
 let childProfileUnsubscribe = null
+// Unsubscribe handle for child points realtime watcher
+let childPointsUnsubscribe = null
 
 // Feature flag: disable Firebase Storage uploads when running on GitHub Pages
 // or when Firebase Storage CORS isn't configured. Set to true to re-enable.
@@ -836,7 +838,7 @@ async function redeemReward(rewardId) {
     showNotification("Reward redeemed! 🎁", "success")
 
     setTimeout(() => {
-      loadChildPoints()
+      setupChildPointsListener()
       loadRewards()
       loadChildProfile()
     }, 1000)
@@ -1501,6 +1503,33 @@ window.onclick = (event) => {
 // DASHBOARD NAVIGATION & INITIALIZATION
 // ==========================================
 
+let parentTasksUnsubscribe = null
+
+// Set up a realtime listener for parent task templates so parent view stays in sync
+async function setupParentTasksListener() {
+  try {
+    const user = auth.currentUser
+    if (!user || !db) return
+    const familyCode = await getFamilyCodeForUser(user)
+    if (!familyCode) return
+
+    if (parentTasksUnsubscribe) {
+      try { parentTasksUnsubscribe(); } catch(e){}
+      parentTasksUnsubscribe = null
+    }
+
+    parentTasksUnsubscribe = db.collection('taskTemplates')
+      .where('familyCode', '==', familyCode)
+      .onSnapshot(() => {
+        loadParentTasks().catch(() => {})
+      }, (err) => {
+        console.warn('[TaskQuest] parent tasks listener error:', err)
+      })
+  } catch (error) {
+    console.error('[TaskQuest] setupParentTasksListener error:', error)
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   console.log("[TaskQuest] DOM loaded, initializing page...")
 
@@ -1512,7 +1541,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const currentPage = window.location.pathname.split("/").pop()
       if (currentPage === "child-dashboard.html") {
         // Load child page and attach real-time listeners
-        loadChildPoints()
+        setupChildPointsListener()
         loadAvailableTasks()
         loadRewards()
         loadChildProfile()
@@ -1536,6 +1565,8 @@ document.addEventListener("DOMContentLoaded", () => {
         loadChildren()
         loadParentTasks()
         loadParentRewards()
+        // Keep parent tasks view in sync in real-time
+        setupParentTasksListener()
         initializeSectionVisibility()
         displayFamilyCode()
         try {
@@ -1683,21 +1714,29 @@ async function showParentPinVerification() {
   }
 }
 
-async function loadChildPoints() {
+// Set up a realtime listener for the child's points so the UI updates automatically
+function setupChildPointsListener() {
   try {
     const user = auth.currentUser
-    if (!user) return
+    if (!user || !db) return
 
-    const userDoc = await db.collection("users").doc(user.uid).get()
-    if (userDoc.exists) {
-      const points = userDoc.data().points || 0
-      const pointsValue = document.querySelector(".points-value")
-      if (pointsValue) {
-        pointsValue.textContent = points
-      }
+    // Clean up any existing listener
+    if (childPointsUnsubscribe) {
+      try { childPointsUnsubscribe(); } catch (e) {}
+      childPointsUnsubscribe = null
     }
+
+    childPointsUnsubscribe = db.collection('users').doc(user.uid).onSnapshot((snap) => {
+      if (!snap.exists) return
+      const data = snap.data()
+      const points = data.points || 0
+      const pointsValue = document.querySelector('.points-value')
+      if (pointsValue) pointsValue.textContent = points
+    }, (err) => {
+      console.error('[TaskQuest] Child points listener error:', err)
+    })
   } catch (error) {
-    console.error("[TaskQuest] Load points error:", error)
+    console.error('[TaskQuest] setupChildPointsListener error:', error)
   }
 }
 
@@ -1759,9 +1798,20 @@ async function loadAvailableTasks() {
       .where("status", "==", "approved")
       .get()
 
+    // Also get pending submissions (submitted but awaiting parent) so child cannot resubmit
+    const pendingSnapshot = await db.collection("submissions")
+      .where("userId", "==", user.uid)
+      .where("status", "==", "pending")
+      .get()
+
     const approvedTaskIds = new Set()
     approvedSnapshot.forEach((doc) => {
       approvedTaskIds.add(doc.data().taskId)
+    })
+
+    const pendingTaskIds = new Set()
+    pendingSnapshot.forEach((doc) => {
+      pendingTaskIds.add(doc.data().taskId)
     })
 
     // Get declined submissions for this user (so we can reset button to Start)
@@ -1785,8 +1835,8 @@ async function loadAvailableTasks() {
       const isDeclined = declinedTaskIds.has(taskId)
       const inProgressByOther = inProgressByOthers[taskId]
 
-      // Skip tasks that this child has already completed and approved
-      if (isApproved) return
+      // Skip tasks that this child has already completed and approved or already submitted (pending)
+      if (isApproved || pendingTaskIds.has(taskId)) return
 
       const taskCard = document.createElement("div")
       taskCard.className = `child-task-card ${isInProgress ? 'in-progress' : ''}`
@@ -1811,6 +1861,10 @@ async function loadAvailableTasks() {
       `
       tasksGrid.appendChild(taskCard)
     })
+    // If after filtering there are no visible tasks, show the empty message
+    if (!tasksGrid.hasChildNodes()) {
+      tasksGrid.innerHTML = "<p>No tasks available yet. Ask your parent to create tasks!</p>"
+    }
   } catch (error) {
     await handleFirestoreError(error, document.querySelector(".child-tasks-grid"))
   }
@@ -2338,8 +2392,39 @@ async function loadParentTasks() {
 
     tasksGrid.innerHTML = ""
 
-    tasksSnapshot.forEach((doc) => {
+    // Determine number of children in this family so we can detect when all children completed a task
+    let childrenCount = 0
+    try {
+      const childrenSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'child').get()
+      childrenCount = childrenSnap.size || 0
+    } catch (e) {
+      console.warn('[TaskQuest] Failed to count children for family:', e)
+    }
+
+    // Use for..of so we can await per-task checks
+    for (const doc of tasksSnapshot.docs) {
       const task = doc.data()
+
+      // Check if all children have an approved submission for this task — if so, hide it from parent list
+      let approvedByCount = 0
+      try {
+        const approvedSnap = await db.collection('submissions')
+          .where('taskId', '==', doc.id)
+          .where('status', '==', 'approved')
+          .get()
+        // Count distinct users who have approved submissions
+        const users = new Set()
+        approvedSnap.forEach((s) => { if (s.data().userId) users.add(s.data().userId) })
+        approvedByCount = users.size
+      } catch (e) {
+        console.warn('[TaskQuest] Failed to check approved submissions for task:', e)
+      }
+
+      if (childrenCount > 0 && approvedByCount >= childrenCount) {
+        // All children completed this task — skip showing it to parent
+        continue
+      }
+
       const taskCard = document.createElement("div")
       taskCard.className = "task-template-card"
       taskCard.innerHTML = `
@@ -2350,7 +2435,7 @@ async function loadParentTasks() {
         <button class="delete-btn" onclick="deleteTask('${doc.id}')">Delete</button>
       `
       tasksGrid.appendChild(taskCard)
-    })
+    }
   } catch (error) {
     await handleFirestoreError(error, document.getElementById("tasksGrid"))
   }
@@ -2638,32 +2723,40 @@ async function loadActivityHistory() {
 
     const activities = []
 
-    // Process submissions
+    // Process submissions: include more details for richer history cards
     for (const doc of submissionsSnapshot.docs) {
       const submission = doc.data()
-      // Defensive: some submissions may not have taskId (older/partial docs)
+      const submissionId = doc.id
+      // Defensive: fallback values
       let taskName = submission.taskTitle || "Unknown Task"
+      let taskDescription = submission.taskDescription || ""
       let points = 0
+      let beforePhoto = submission.beforePhoto || submission.beforeDataUrl || null
+      let afterPhoto = submission.afterPhoto || submission.afterDataUrl || null
+
       if (submission.taskId) {
         try {
           const taskDoc = await db.collection("taskTemplates").doc(submission.taskId).get()
           if (taskDoc.exists) {
-            taskName = taskDoc.data().title || taskName
-            points = taskDoc.data().points || 0
+            const t = taskDoc.data()
+            taskName = t.title || taskName
+            taskDescription = t.description || taskDescription
+            points = t.points || 0
           }
         } catch (e) {
           console.warn('[TaskQuest] Failed to load task template for activity history:', e)
-          // don't throw — show the submission using fallback data
         }
-      } else {
-        console.warn('[TaskQuest] Submission missing taskId, using fallback title:', doc.id)
       }
 
       activities.push({
+        id: submissionId,
         type: submission.status,
         title: taskName,
+        description: taskDescription,
         time: submission.submittedAt?.toDate() || new Date(),
         points: points,
+        beforePhoto: beforePhoto,
+        afterPhoto: afterPhoto,
       })
     }
 
@@ -2686,55 +2779,45 @@ async function loadActivityHistory() {
       return
     }
 
+    // Render as a responsive 3-column grid of cards
     activityList.innerHTML = ""
+    activityList.style.display = 'grid'
+    activityList.style.gridTemplateColumns = 'repeat(3, 1fr)'
+    activityList.style.gap = '12px'
 
     activities.forEach((activity) => {
-      const activityItem = document.createElement("div")
+      const card = document.createElement('div')
+      card.className = `activity-card ${activity.type}`
+      card.style.cssText = `
+        border: 1px solid #e0e0e0;
+        padding: 10px;
+        border-radius: 8px;
+        background: #fff;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      `
       const timeAgo = getTimeAgo(activity.time)
 
-      if (activity.type === "approved") {
-        activityItem.className = "activity-item completed"
-        activityItem.innerHTML = `
-          <div class="activity-icon">✅</div>
-          <div class="activity-details">
-            <h4>${activity.title}</h4>
-            <span class="activity-time">${timeAgo}</span>
+      card.innerHTML = `
+        <div class="card-header">
+          <h4>${activity.title}</h4>
+          <span class="activity-time">${timeAgo}</span>
+        </div>
+        <div class="card-body">
+          <p class="card-desc">${activity.description || ''}</p>
+          <div class="photo-row">
+            <img class="history-photo" src="${activity.beforePhoto || '/before-task.jpg'}" alt="Before" onerror="this.src='/before-task.jpg'">
+            <img class="history-photo" src="${activity.afterPhoto || '/after-task.jpg'}" alt="After" onerror="this.src='/after-task.jpg'">
           </div>
-          <span class="activity-points">+${activity.points} pts</span>
-        `
-      } else if (activity.type === "pending") {
-        activityItem.className = "activity-item pending"
-        activityItem.innerHTML = `
-          <div class="activity-icon">⏳</div>
-          <div class="activity-details">
-            <h4>${activity.title}</h4>
-            <span class="activity-time">${timeAgo}</span>
-          </div>
-          <span class="activity-status">Pending</span>
-        `
-      } else if (activity.type === "declined") {
-        activityItem.className = "activity-item declined"
-        activityItem.innerHTML = `
-          <div class="activity-icon">❌</div>
-          <div class="activity-details">
-            <h4>${activity.title}</h4>
-            <span class="activity-time">${timeAgo}</span>
-          </div>
-          <span class="activity-status">Try again</span>
-        `
-      } else if (activity.type === "redeemed") {
-        activityItem.className = "activity-item reward"
-        activityItem.innerHTML = `
-          <div class="activity-icon">🎁</div>
-          <div class="activity-details">
-            <h4>${activity.title}</h4>
-            <span class="activity-time">${timeAgo}</span>
-          </div>
-          <span class="activity-cost">-${activity.cost} pts</span>
-        `
-      }
+        </div>
+        <div class="card-footer">
+          <span class="points">+${activity.points} pts</span>
+          <span class="status ${activity.type}">${activity.type}</span>
+        </div>
+      `
 
-      activityList.appendChild(activityItem)
+      activityList.appendChild(card)
     })
   } catch (error) {
     console.error("[TaskQuest] Load activity history error:", error)
