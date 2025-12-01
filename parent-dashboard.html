@@ -19,6 +19,7 @@
         <!-- Center nav links (visible on desktop/tablet) -->
         <div class="nav-links">
             <a href="#approvals" class="nav-link active" onclick="navigateToSection('approvals'); return false;">Approvals</a>
+            <a href="#coparents" class="nav-link" onclick="navigateToSection('coparents'); return false;">Family</a>
             <a href="#manage" class="nav-link" onclick="navigateToSection('manage'); return false;">Manage</a>
             <a href="#settings" class="nav-link" onclick="navigateToSection('settings'); return false;">Settings</a>
         </div>
@@ -34,7 +35,7 @@
                 <a class="profile-menu-item mobile-only" href="#manage" onclick="toggleProfileMenu(false); navigateToSection('manage'); return false;">Manage</a>
                 <a class="profile-menu-item mobile-only" href="#settings" onclick="toggleProfileMenu(false); navigateToSection('settings'); return false;">Settings</a>
                 <a class="profile-menu-item" href="#profile" onclick="toggleProfileMenu(false); navigateToSection('profile'); return false;">Profile</a>
-                <a class="profile-menu-item" href="#coparents" onclick="toggleProfileMenu(false); navigateToSection('coparents'); return false;">Co-Parents</a>
+                <a class="profile-menu-item" href="#coparents" onclick="toggleProfileMenu(false); navigateToSection('coparents'); return false;">Family</a>
                     <button class="profile-menu-item" onclick="toggleProfileMenu(false); logout();">Logout</button>
             </div>
         </div>
@@ -110,9 +111,9 @@
             </div>
         </section>
 
-        <!-- Co-Parents Section -->
+        <!-- Family Section (Parents in this family) -->
         <section id="coparents-section" class="dashboard-section" style="display: none;">
-            <h2 class="section-title">Co-Parents</h2>
+            <h2 class="section-title">Family</h2>
             <div class="subsection">
                 <p style="margin-bottom:16px; color:var(--text-secondary);">Parents managing this family with you</p>
                 <div id="coparentsGrid" style="display:grid; gap:12px;">

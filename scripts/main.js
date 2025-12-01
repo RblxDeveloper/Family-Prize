@@ -4042,11 +4042,35 @@ async function loadCoparents() {
       return 
     }
 
+    // Determine family owner
+    async function determineFamilyOwnerId(code) {
+      try {
+        const codeSnap = await db.collection('parentInviteCodes').where('familyCode', '==', code).limit(1).get()
+        if (!codeSnap.empty) {
+          const d = codeSnap.docs[0].data()
+          if (d && d.ownerId) return d.ownerId
+        }
+      } catch (e) { console.debug('[TaskQuest] owner lookup by code failed:', e) }
+      try {
+        const firstParent = await db.collection('users')
+          .where('familyCode', '==', code)
+          .where('role', '==', 'parent')
+          .orderBy('createdAt', 'asc')
+          .limit(1)
+          .get()
+        if (!firstParent.empty) return firstParent.docs[0].id
+      } catch (e) { console.debug('[TaskQuest] owner fallback lookup failed:', e) }
+      return null
+    }
+
+    const ownerId = await determineFamilyOwnerId(familyCode)
+    const isOwner = ownerId === user.uid
+
     // Get all parents in the family (excluding self)
     const parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
     const parents = []
     parentsSnap.forEach(doc => {
-      if (doc.id !== user.uid) { // Exclude self
+      if (doc.id !== user.uid) {
         parents.push({ id: doc.id, ...doc.data() })
       }
     })
@@ -4063,12 +4087,13 @@ async function loadCoparents() {
     parents.forEach(parent => {
       const name = parent.name || parent.email?.split('@')[0] || 'Parent'
       const email = parent.email || 'N/A'
+      const controls = isOwner ? `<button class='secondary-btn' style='font-size:12px; padding:6px 10px;' onclick="removeCoparent('${parent.id}')">Remove</button>` : `<span style='font-size:12px; color:var(--text-secondary);'>Co-Parent</span>`
       html += `<div style="padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); display:flex; align-items:center; justify-content:space-between; gap:12px;">
         <div>
           <div style="font-weight:600;">${escapeHtml(name)}</div>
           <div style="font-size:12px; color:var(--text-secondary);">${escapeHtml(email)}</div>
         </div>
-        <div style="font-size:12px; color:var(--text-secondary);">Co-Parent</div>
+        <div>${controls}</div>
       </div>`
     })
     gridEl.innerHTML = html
@@ -4076,6 +4101,34 @@ async function loadCoparents() {
     console.error('[TaskQuest] loadCoparents error:', error)
     const gridEl = document.getElementById('coparentsGrid')
     if (gridEl) gridEl.innerHTML = '<p>Error loading co-parents.</p>'
+  }
+}
+
+// Owner control: remove a co-parent from the family (sets their familyCode to null)
+async function removeCoparent(parentId) {
+  try {
+    const confirm = await showConfirmModal('Remove Co-Parent', 'Are you sure you want to remove this co-parent from your family?')
+    if (!confirm) return
+    const owner = auth.currentUser
+    if (!owner) { showNotification('Please sign in as a parent.', 'error'); return }
+    const ownerDoc = await db.collection('users').doc(owner.uid).get()
+    const familyCode = ownerDoc.exists ? (ownerDoc.data().familyCode || null) : null
+    if (!familyCode) { showNotification('Your account has no family code.', 'error'); return }
+
+    // Attempt the update; if rules block it, guide the user.
+    await db.collection('users').doc(parentId).update({ familyCode: null, removedBy: owner.uid, removedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    showNotification('Co-parent removed from family.', 'success')
+    setTimeout(() => { loadCoparents(); loadParentProfile() }, 300)
+  } catch (error) {
+    console.error('[TaskQuest] removeCoparent error:', error)
+    const code = (error && error.code) || ''
+    if (code === 'permission-denied') {
+      showNotification('Permission denied removing co-parent. Update Firestore rules to allow owners to clear familyCode for another parent.', 'error')
+      console.error('[TaskQuest] To allow removal, add this rule under match /users/{userId} -> allow update OR clause:\n' +
+        "(isSignedIn() && isParent() && resource.data.role == 'parent' && resource.data.familyCode == getUserData().familyCode && request.resource.data.familyCode == null)" )
+    } else {
+      showNotification('Failed to remove co-parent: ' + (error.message || String(error)), 'error')
+    }
   }
 }
 
