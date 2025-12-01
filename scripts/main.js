@@ -4270,8 +4270,6 @@ async function viewParentDetails(parentId) {
     showNotification('Failed to load parent details.', 'error')
   }
 }
-  }
-}
 
 // Setup real-time listener for tasks (auto-update when parent adds tasks)
 function setupTasksListener() {
