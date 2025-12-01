@@ -135,8 +135,11 @@ service cloud.firestore {
       // User can read requests they created or requests targeting them
       allow read: if isSignedIn() && (resource.data.requesterId == request.auth.uid || resource.data.targetOwnerId == request.auth.uid);
       
-      // Only the target owner can approve/decline
+      // Only the target owner can approve/decline requests
       allow update: if isSignedIn() && resource.data.targetOwnerId == request.auth.uid;
+      
+      // Allow deletion only by target owner if status is pending
+      allow delete: if isSignedIn() && resource.data.targetOwnerId == request.auth.uid && resource.data.status == 'pending';
     }
   }
 }

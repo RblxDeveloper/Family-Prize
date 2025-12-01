@@ -3533,18 +3533,22 @@ async function viewParentRequests() {
     if (!user) { showNotification('Please sign in as a parent to view requests.', 'error'); return }
     const snapshot = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).get()
     if (snapshot.empty) { showNotification('No pending parent requests.', 'info'); return }
-    // Build HTML list
+    // Build HTML list with more details
     let listHtml = ''
     snapshot.forEach(doc => {
       const data = doc.data()
-      listHtml += `<div style="padding:8px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <div>
-          <strong>${escapeHtml(data.requesterName || data.requesterId)}</strong><br>
-          <small>${escapeHtml(data.requesterEmail || '')}</small>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class='secondary-btn' onclick="approveParentRequest('${doc.id}')">Approve</button>
-          <button class='secondary-btn' onclick="declineParentRequest('${doc.id}')">Decline</button>
+      const createdDate = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleDateString() : 'N/A'
+      listHtml += `<div style="padding:12px; margin-bottom:8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <div style="flex:1;">
+            <strong style="display:block; margin-bottom:4px;">${escapeHtml(data.requesterName || 'Parent')}</strong>
+            <small style="display:block; color:var(--text-secondary); margin-bottom:4px;">Email: ${escapeHtml(data.requesterEmail || 'N/A')}</small>
+            <small style="display:block; color:var(--text-secondary);">Requested: ${createdDate}</small>
+          </div>
+          <div style="display:flex; gap:6px; flex-shrink:0;">
+            <button class='secondary-btn' onclick="approveParentRequest('${doc.id}')" style="font-size:12px; padding:6px 10px;">Approve</button>
+            <button class='secondary-btn' onclick="declineParentRequest('${doc.id}')" style="font-size:12px; padding:6px 10px;">Decline</button>
+          </div>
         </div>
       </div>`
     })
