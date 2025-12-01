@@ -1477,20 +1477,26 @@ async function completeGoogleSignup(uid, displayName, role) {
 async function signInWithApple() {
   try {
     console.log('[TaskQuest] signInWithApple() called')
+    console.log('[TaskQuest] Auth initialized:', !!auth)
+    console.log('[TaskQuest] OAuthProvider available:', !!firebase.auth.OAuthProvider)
     
     if (!auth) {
+      console.error('[TaskQuest] Auth is not initialized!')
       showNotification('Firebase not initialized. Please refresh the page.', 'error')
       return
     }
     
     if (!firebase.auth.OAuthProvider) {
+      console.error('[TaskQuest] OAuthProvider not available!')
       showNotification('Apple Sign-In not available in your Firebase SDK version.', 'error')
       return
     }
     
+    console.log('[TaskQuest] Creating Apple OAuth provider...')
     const appleProvider = new firebase.auth.OAuthProvider('apple.com')
     appleProvider.addScope('email')
     appleProvider.addScope('name')
+    console.log('[TaskQuest] Apple provider created successfully')
     
     // Try popup first (better UX). If it fails (popup blocker), fall back to redirect.
     try {
@@ -1499,15 +1505,22 @@ async function signInWithApple() {
       console.log('[TaskQuest] Apple popup sign-in successful, user:', result.user?.email)
       await processAppleSignInResult(result)
     } catch (popupErr) {
-      console.warn('[TaskQuest] Apple popup sign-in failed:', popupErr?.code, popupErr?.message)
+      console.error('[TaskQuest] Apple popup sign-in caught error:', popupErr?.code, popupErr?.message)
+      console.error('[TaskQuest] Full popup error:', popupErr)
       if (popupErr.code === 'auth/popup-blocked' || popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
+        console.log('[TaskQuest] Popup was blocked/cancelled, attempting redirect fallback...')
         showNotification('Popup blocked or cancelled. Using redirect sign-in as a fallback.', 'warning')
+      } else {
+        console.log('[TaskQuest] Popup error code:', popupErr.code)
       }
+      
       try {
         console.log('[TaskQuest] Attempting Apple redirect sign-in...')
         await auth.signInWithRedirect(appleProvider)
+        console.log('[TaskQuest] Apple redirect initiated')
       } catch (redirectErr) {
         console.error('[TaskQuest] Apple redirect sign-in failed:', redirectErr?.code, redirectErr?.message)
+        console.error('[TaskQuest] Full redirect error:', redirectErr)
         if (redirectErr.code === 'auth/unauthorized-domain') {
           showNotification('Apple Sign-In blocked: unauthorized domain. Add your domain in Firebase Console (Auth → Authorized domains).', 'error')
         } else if (redirectErr.code === 'auth/operation-not-supported-in-this-environment') {
@@ -1515,12 +1528,13 @@ async function signInWithApple() {
         } else if (redirectErr.code === 'auth/invalid-oauth-provider') {
           showNotification('Apple Sign-In not enabled in Firebase. Go to Firebase Console → Authentication → Sign-in method → Enable Apple.', 'error')
         } else {
-          showNotification('Apple Sign-In failed: ' + redirectErr.message, 'error')
+          showNotification('Apple Sign-In failed: ' + (redirectErr?.message || 'Unknown error'), 'error')
         }
       }
     }
   } catch (error) {
     console.error("[TaskQuest] Apple Sign-In outer error:", error)
+    console.error("[TaskQuest] Full outer error details:", error)
     showNotification('Apple Sign-In failed: ' + (error?.message || String(error)), 'error')
   }
 }
