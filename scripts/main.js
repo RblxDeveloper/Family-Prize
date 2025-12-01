@@ -2032,6 +2032,13 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
           console.warn('[TaskQuest] Failed to attach parentInvite outcome listener:', e)
         }
+        try {
+          // Attach parents listener so Family section updates instantly
+          if (window.parentsUnsubscribe) { try { window.parentsUnsubscribe() } catch(e){}; window.parentsUnsubscribe = null }
+          window.parentsUnsubscribe = setupParentsListener()
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to attach parents listener on load:', e)
+        }
       }
     } else {
       // User not logged in, redirect to index if not already there
@@ -3809,7 +3816,7 @@ function setupParentInviteOutcomeListener() {
           const familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
           if (!familyCode) return
           await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
-          showNotification('You have been linked as a co-parent.', 'success')
+          showNotification('You have been linked to this family as a parent.', 'success')
           // Optionally mark request as completed/acknowledged by requester
           try { await db.collection('parentInviteRequests').doc(snap.docs[0].id).update({ acknowledgedByRequesterAt: firebase.firestore.FieldValue.serverTimestamp() }) } catch(e) {}
           // Refresh co-parents and profile if on parent dashboard
@@ -3905,7 +3912,7 @@ async function approveParentRequest(requestId) {
       tx.update(reqRef, { status: 'approved', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
     })
 
-    showNotification('Parent request approved — co-parent added.', 'success')
+    showNotification('Parent request approved — parent added to family.', 'success')
 
     // Step 2: best-effort: attempt to set requester.user.familyCode (may be blocked by rules)
     try {
@@ -3992,7 +3999,7 @@ async function loadParentProfile() {
     if (emailEl) emailEl.textContent = user.email || ''
     if (familyEl) familyEl.textContent = data.familyCode || '------'
 
-    // Count managed children and co-parents
+    // Count managed children and parents
     let childrenCount = 0
     let parentsCount = 0
     if (data.familyCode) {
@@ -4010,17 +4017,19 @@ async function loadParentProfile() {
     const activityEl = document.getElementById('parentActivityList')
     if (!activityEl) return
     activityEl.innerHTML = '<p>Loading recent activity...</p>'
-    const inbox = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).orderBy('createdAt', 'desc').limit(6).get()
-    const outbox = await db.collection('parentInviteRequests').where('requesterId', '==', user.uid).orderBy('createdAt', 'desc').limit(6).get()
+    // Avoid composite index requirement by removing orderBy and sorting client-side
+    const inbox = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).limit(12).get()
+    const outbox = await db.collection('parentInviteRequests').where('requesterId', '==', user.uid).limit(12).get()
     let html = ''
-    inbox.forEach(doc => {
-      const d = doc.data()
-      html += `<div class="activity-item">Request from <strong>${escapeHtml(d.requesterName||d.requesterId)}</strong> — <em>${escapeHtml(d.status)}</em></div>`
-    })
-    outbox.forEach(doc => {
-      const d = doc.data()
-      html += `<div class="activity-item">Requested access to <strong>code ${escapeHtml(d.code)}</strong> — <em>${escapeHtml(d.status)}</em></div>`
-    })
+    function byDateDesc(a,b){
+      const ta = a?.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a?.createdAt?.seconds ? a.createdAt.seconds*1000 : 0)
+      const tb = b?.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b?.createdAt?.seconds ? b.createdAt.seconds*1000 : 0)
+      return tb - ta
+    }
+    const inboxItems = inbox.docs.map(x => x.data()).sort(byDateDesc).slice(0,6)
+    const outboxItems = outbox.docs.map(x => x.data()).sort(byDateDesc).slice(0,6)
+    inboxItems.forEach(d => { html += `<div class="activity-item">Request from <strong>${escapeHtml(d.requesterName||'Parent')}</strong> — <em>${escapeHtml(d.status)}</em></div>` })
+    outboxItems.forEach(d => { html += `<div class="activity-item">Requested access to <strong>code ${escapeHtml(d.code||'')}</strong> — <em>${escapeHtml(d.status)}</em></div>` })
     if (!html) html = '<p>No recent activity.</p>'
     activityEl.innerHTML = html
   } catch (error) {
@@ -4028,7 +4037,7 @@ async function loadParentProfile() {
   }
 }
 
-// Load co-parents list for parent dashboard
+// Load family parents list for parent dashboard
 async function loadCoparents() {
   try {
     const user = auth.currentUser
@@ -4052,13 +4061,19 @@ async function loadCoparents() {
         }
       } catch (e) { console.debug('[TaskQuest] owner lookup by code failed:', e) }
       try {
-        const firstParent = await db.collection('users')
+        const parents = await db.collection('users')
           .where('familyCode', '==', code)
           .where('role', '==', 'parent')
-          .orderBy('createdAt', 'asc')
-          .limit(1)
           .get()
-        if (!firstParent.empty) return firstParent.docs[0].id
+        if (!parents.empty) {
+          // Choose earliest by createdAt client-side to avoid composite index
+          const sorted = parents.docs.sort((a,b) => {
+            const ta = a.data().createdAt?.toMillis ? a.data().createdAt.toMillis() : (a.data().createdAt?.seconds ? a.data().createdAt.seconds*1000 : 0)
+            const tb = b.data().createdAt?.toMillis ? b.data().createdAt.toMillis() : (b.data().createdAt?.seconds ? b.data().createdAt.seconds*1000 : 0)
+            return ta - tb
+          })
+          return sorted[0].id
+        }
       } catch (e) { console.debug('[TaskQuest] owner fallback lookup failed:', e) }
       return null
     }
@@ -4079,7 +4094,7 @@ async function loadCoparents() {
     if (!gridEl) return
 
     if (parents.length === 0) {
-      gridEl.innerHTML = '<p>No co-parents yet. Share your invite code to add guardians.</p>'
+      gridEl.innerHTML = '<p>No parents linked yet. Share your invite code to add guardians.</p>'
       return
     }
 
@@ -4087,7 +4102,7 @@ async function loadCoparents() {
     parents.forEach(parent => {
       const name = parent.name || parent.email?.split('@')[0] || 'Parent'
       const email = parent.email || 'N/A'
-      const controls = isOwner ? `<button class='secondary-btn' style='font-size:12px; padding:6px 10px;' onclick="removeCoparent('${parent.id}')">Remove</button>` : `<span style='font-size:12px; color:var(--text-secondary);'>Co-Parent</span>`
+      const controls = isOwner ? `<button class='secondary-btn' style='font-size:12px; padding:6px 10px;' onclick="removeCoparent('${parent.id}')">Remove</button>` : `<span style='font-size:12px; color:var(--text-secondary);'>Parent</span>`
       html += `<div style="padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); display:flex; align-items:center; justify-content:space-between; gap:12px;">
         <div>
           <div style="font-weight:600;">${escapeHtml(name)}</div>
@@ -4100,14 +4115,14 @@ async function loadCoparents() {
   } catch (error) {
     console.error('[TaskQuest] loadCoparents error:', error)
     const gridEl = document.getElementById('coparentsGrid')
-    if (gridEl) gridEl.innerHTML = '<p>Error loading co-parents.</p>'
+    if (gridEl) gridEl.innerHTML = '<p>Error loading family.</p>'
   }
 }
 
-// Owner control: remove a co-parent from the family (sets their familyCode to null)
+// Owner control: remove a parent from the family (sets their familyCode to null)
 async function removeCoparent(parentId) {
   try {
-    const confirm = await showConfirmModal('Remove Co-Parent', 'Are you sure you want to remove this co-parent from your family?')
+    const confirm = await showConfirmModal('Remove Parent', 'Are you sure you want to remove this parent from your family?')
     if (!confirm) return
     const owner = auth.currentUser
     if (!owner) { showNotification('Please sign in as a parent.', 'error'); return }
@@ -4117,17 +4132,17 @@ async function removeCoparent(parentId) {
 
     // Attempt the update; if rules block it, guide the user.
     await db.collection('users').doc(parentId).update({ familyCode: null, removedBy: owner.uid, removedAt: firebase.firestore.FieldValue.serverTimestamp() })
-    showNotification('Co-parent removed from family.', 'success')
+    showNotification('Parent removed from family.', 'success')
     setTimeout(() => { loadCoparents(); loadParentProfile() }, 300)
   } catch (error) {
     console.error('[TaskQuest] removeCoparent error:', error)
     const code = (error && error.code) || ''
     if (code === 'permission-denied') {
-      showNotification('Permission denied removing co-parent. Update Firestore rules to allow owners to clear familyCode for another parent.', 'error')
+      showNotification('Permission denied removing parent. Update Firestore rules to allow owners to clear familyCode for another parent.', 'error')
       console.error('[TaskQuest] To allow removal, add this rule under match /users/{userId} -> allow update OR clause:\n' +
         "(isSignedIn() && isParent() && resource.data.role == 'parent' && resource.data.familyCode == getUserData().familyCode && request.resource.data.familyCode == null)" )
     } else {
-      showNotification('Failed to remove co-parent: ' + (error.message || String(error)), 'error')
+      showNotification('Failed to remove parent: ' + (error.message || String(error)), 'error')
     }
   }
 }
@@ -4342,6 +4357,46 @@ function setupChildrenListener() {
       try { unsubscribe() } catch (e) {}
     }
   }
+}
+
+// Real-time listener for parents in the family so Family list updates instantly
+function setupParentsListener() {
+  if (!auth.currentUser) return () => {}
+  const user = auth.currentUser
+  let unsubscribe = null
+
+  db.collection('users').doc(user.uid).get().then((doc) => {
+    if (!doc.exists) return
+    const familyCode = doc.data().familyCode
+    if (!familyCode) return
+
+    unsubscribe = db
+      .collection('users')
+      .where('familyCode', '==', familyCode)
+      .where('role', '==', 'parent')
+      .onSnapshot((snapshot) => {
+        try { window.__cache = window.__cache || {} } catch(e) {}
+        const count = snapshot.size
+        const prev = window.__cache.parentsCount || 0
+        window.__cache.parentsCount = count
+        // Reload Family list
+        loadCoparents()
+        // Notify only when the number increases (new parent)
+        if (count > prev && prev !== 0) {
+          showNotification('A new parent joined your family.', 'success')
+        }
+      }, (error) => {
+        if (error && error.code === 'permission-denied') {
+          console.debug('[TaskQuest] Parents listener permission denied')
+        } else {
+          console.warn('[TaskQuest] Parents listener error:', error)
+        }
+      })
+  }).catch((err) => {
+    console.warn('[TaskQuest] Failed to attach parents listener:', err)
+  })
+
+  return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
 }
 
 // Load pending family requests for parent
