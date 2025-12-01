@@ -2871,6 +2871,7 @@ async function setFamilyCodeForChild() {
         parentId: null,
         parentName: null,
         familyCode: code,
+        roleRequested: 'child',
         status: "pending",
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         respondedAt: null,
@@ -3167,8 +3168,9 @@ function setupFamilyRequestsListener() {
 
 // Real-time listener for children in the parent's family (when children update their user doc)
 function setupChildrenListener() {
-  if (!auth.currentUser) return
+  if (!auth.currentUser) return () => {}
   const user = auth.currentUser
+  let unsubscribe = null
 
   db.collection('users').doc(user.uid).get().then((doc) => {
     if (!doc.exists) return
@@ -3176,7 +3178,7 @@ function setupChildrenListener() {
     if (!familyCode) return
 
     // Listen for updates to child accounts that match this family code
-    return db
+    unsubscribe = db
       .collection('users')
       .where('familyCode', '==', familyCode)
       .where('role', '==', 'child')
@@ -3196,6 +3198,12 @@ function setupChildrenListener() {
   }).catch((err) => {
     console.warn('[TaskQuest] Failed to attach children listener:', err)
   })
+
+  return () => {
+    if (unsubscribe) {
+      try { unsubscribe() } catch (e) {}
+    }
+  }
 }
 
 // Load pending family requests for parent
