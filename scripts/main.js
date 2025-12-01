@@ -2656,6 +2656,48 @@ async function setFamilyCodeForChild() {
   }
 }
 
+// Prompt an existing user to request guardian (parent) access for a family
+async function promptParentJoin() {
+  try {
+    const user = auth.currentUser
+    if (!user) {
+      showNotification('Please sign in before requesting guardian access.', 'error')
+      return
+    }
+
+    const code = prompt('Enter the 6-digit family code you want to join as a guardian:')
+    if (!code) return
+    const trimmed = String(code).trim()
+    if (!trimmed || trimmed.length !== 6 || isNaN(trimmed)) {
+      showNotification('Please enter a valid 6-digit family code.', 'error')
+      return
+    }
+
+    const displayName = user.displayName || (user.email ? user.email.split('@')[0] : 'User')
+
+    // Create a familyRequests doc indicating a guardian/parent request
+    await db.collection('familyRequests').add({
+      requesterId: user.uid,
+      requesterName: displayName,
+      requesterEmail: user.email || null,
+      roleRequested: 'parent',
+      familyCode: trimmed,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      respondedAt: null
+    })
+
+    showNotification('Guardian request sent — waiting for parent approval.', 'success')
+  } catch (error) {
+    console.error('[TaskQuest] promptParentJoin error:', error)
+    if ((error && error.message && error.message.includes('permissions')) || String(error).includes('Missing or insufficient permissions')) {
+      showNotification('Permission denied. Your Firestore rules may need updating.', 'error')
+    } else {
+      showNotification('Failed to send guardian request: ' + (error.message || String(error)), 'error')
+    }
+  }
+}
+
 // Setup real-time listener for tasks (auto-update when parent adds tasks)
 function setupTasksListener() {
   if (!auth.currentUser) return
@@ -2792,15 +2834,20 @@ async function loadPendingFamilyRequests() {
       const req = doc.data()
       const requestId = doc.id
 
-      const card = document.createElement("div")
-      card.className = "family-request-card"
+      const isGuardian = req.roleRequested === 'parent'
+      const displayName = isGuardian ? (req.requesterName || 'Guardian Request') : (req.childName || 'Child')
+      const displayEmail = isGuardian ? (req.requesterEmail || '') : (req.childEmail || '')
+      const requesterId = isGuardian ? req.requesterId : req.childId
+
+      const card = document.createElement('div')
+      card.className = 'family-request-card'
       card.innerHTML = `
         <div class="request-header">
-          <h4>${req.childName}</h4>
-          <small>${req.childEmail}</small>
+          <h4>${displayName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
+          <small>${displayEmail}</small>
         </div>
         <div class="request-actions">
-          <button class="btn-approve" onclick="approveFamilyRequest('${requestId}', '${req.childId}', '${req.familyCode}')">
+          <button class="btn-approve" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')">
             ✓ Approve
           </button>
           <button class="btn-decline" onclick="declineFamilyRequest('${requestId}')">
@@ -2816,26 +2863,38 @@ async function loadPendingFamilyRequests() {
 }
 
 // Approve a family request
-async function approveFamilyRequest(requestId, childId, familyCode) {
+async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequested = 'child') {
   try {
-    // Update the child's familyCode
-    await db.collection("users").doc(childId).update({
-      familyCode: familyCode
-    })
+    if (roleRequested === 'parent') {
+      // Promote the requester to parent role and assign familyCode
+      await db.collection('users').doc(requesterId).update({
+        role: 'parent',
+        familyCode: familyCode
+      })
+    } else {
+      // Standard child join: set child's familyCode
+      await db.collection('users').doc(requesterId).update({
+        familyCode: familyCode
+      })
+    }
 
     // Mark request as approved
-    await db.collection("familyRequests").doc(requestId).update({
-      status: "approved",
+    await db.collection('familyRequests').doc(requestId).update({
+      status: 'approved',
+      roleResponded: roleRequested,
       respondedAt: firebase.firestore.FieldValue.serverTimestamp()
     })
 
-    showNotification("Child added to family!", "success")
+    showNotification(roleRequested === 'parent' ? 'Guardian added to family!' : 'Child added to family!', 'success')
     loadPendingFamilyRequests()
-    // Refresh children list
-    setTimeout(() => loadChildrenProfiles(), 500)
+    // Refresh lists
+    setTimeout(() => {
+      loadChildrenProfiles()
+      loadParentDashboard && loadParentDashboard()
+    }, 500)
   } catch (error) {
-    console.error("[TaskQuest] Approve request error:", error)
-    showNotification("Failed to approve request: " + error.message, "error")
+    console.error('[TaskQuest] Approve request error:', error)
+    showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
   }
 }
 
