@@ -1238,15 +1238,28 @@ async function handleRedirectSignIn() {
     console.log('[TaskQuest] handleRedirectSignIn: checking for redirect result...')
     const result = await auth.getRedirectResult()
     if (result && result.user) {
-      console.log('[TaskQuest] Redirect sign-in result detected, user:', result.user.email)
-      await processGoogleSignInResult(result)
+      console.log('[TaskQuest] Redirect sign-in result detected, user:', result.user.email, 'provider:', result.user.providerData[0]?.providerId)
+      // Detect which provider was used and process accordingly
+      if (result.user.providerData && result.user.providerData[0]) {
+        const provider = result.user.providerData[0].providerId
+        if (provider === 'apple.com') {
+          console.log('[TaskQuest] Apple redirect detected, processing...')
+          await processAppleSignInResult(result)
+        } else {
+          console.log('[TaskQuest] Google redirect detected, processing...')
+          await processGoogleSignInResult(result)
+        }
+      } else {
+        console.log('[TaskQuest] No provider info, attempting Google processing as fallback')
+        await processGoogleSignInResult(result)
+      }
     } else {
       console.log('[TaskQuest] No redirect result found')
     }
   } catch (err) {
     console.warn('[TaskQuest] getRedirectResult error:', err?.code, err?.message)
     if (err && err.code === 'auth/unauthorized-domain') {
-      showNotification('Google Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
+      showNotification('Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
     }
   }
 }
