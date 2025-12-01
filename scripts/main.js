@@ -1343,6 +1343,7 @@ async function processGoogleSignInResult(result) {
         // Delay parent verification modal to ensure DOM is ready
         setTimeout(() => {
           showParentPinVerification()
+          isProcessingRedirect = false
         }, 300)
       } else if (userData.role === 'child') {
         console.log('[TaskQuest] Navigating child to dashboard')
@@ -1356,6 +1357,7 @@ async function processGoogleSignInResult(result) {
         setTimeout(() => {
           console.log('[TaskQuest] Calling navigateTo child-dashboard.html')
           navigateTo('child-dashboard.html')
+          isProcessingRedirect = false
         }, 800)
       }
     } else {
@@ -1557,6 +1559,7 @@ async function processAppleSignInResult(result) {
         setTimeout(() => {
           console.log('[TaskQuest] Calling navigateTo parent-dashboard.html')
           navigateTo('parent-dashboard.html')
+          isProcessingRedirect = false
         }, 800)
       } else if (userData.role === 'child') {
         console.log('[TaskQuest] Child user, loading dashboard')
@@ -1568,6 +1571,7 @@ async function processAppleSignInResult(result) {
         setTimeout(() => {
           console.log('[TaskQuest] Calling navigateTo child-dashboard.html')
           navigateTo('child-dashboard.html')
+          isProcessingRedirect = false
         }, 800)
       }
     } else {
@@ -1648,6 +1652,7 @@ async function completeAppleSignup(role) {
       showNotification(`Welcome! Your Family Code is: ${familyCode} - Share this with your children!`, "success")
       closeLoginModal()
       pendingAppleUser = null
+      isProcessingRedirect = false
       setTimeout(() => {
         showParentPinVerification()
       }, 800)
@@ -1665,6 +1670,7 @@ async function completeAppleSignup(role) {
       showNotification("Welcome, " + displayName + "!", "success")
       closeLoginModal()
       pendingAppleUser = null
+      isProcessingRedirect = false
       setTimeout(() => {
         navigateTo("child-dashboard.html")
       }, 800)
