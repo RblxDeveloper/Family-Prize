@@ -644,7 +644,6 @@ async function submitTaskForReview() {
           beforeURL = await uploadToCloudinary(uploadedPhotos.before)
           afterURL = await uploadToCloudinary(uploadedPhotos.after)
           console.log('[TaskQuest] Photos uploaded to Cloudinary')
-          showNotification('Photos uploaded to Cloudinary (fallback).', 'success')
         } else {
           throw new Error('CloudinaryNotConfigured')
         }
@@ -653,13 +652,11 @@ async function submitTaskForReview() {
         // Tier 3: Fallback to data URLs (resized)
         try {
           beforeDataUrl = await fileToDataUrlAndResize(uploadedPhotos.before, 1200, 900, 0.7)
-          showNotification('Using local data-URL fallback for before photo.', 'warning')
         } catch (e) {
           console.warn('Failed to convert before photo to dataURL:', e)
         }
         try {
           afterDataUrl = await fileToDataUrlAndResize(uploadedPhotos.after, 1200, 900, 0.7)
-          showNotification('Using local data-URL fallback for after photo.', 'warning')
         } catch (e) {
           console.warn('Failed to convert after photo to dataURL:', e)
         }
@@ -698,8 +695,8 @@ async function submitTaskForReview() {
       console.log('[TaskQuest] Created new submission with photos')
     }
 
-    // Show success toast and close modal
-    showToast("Submitted successfully!", "success", 5000)
+    // Show success notification and close modal
+    showNotification("Submitted successfully!", "success")
     closeUploadModal()
 
     setTimeout(() => {
