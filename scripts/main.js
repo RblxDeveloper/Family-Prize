@@ -1308,6 +1308,8 @@ async function handleRedirectSignIn() {
     console.warn('[TaskQuest] getRedirectResult error:', err?.code, err?.message)
     if (err && err.code === 'auth/unauthorized-domain') {
       showNotification('Sign-In blocked: unauthorized domain. Add your site domain in the Firebase Console (Auth → Authorized domains).', 'error')
+    } else if (err && err.code === 'auth/account-exists-with-different-credential') {
+      showNotification('This email is already used with a different sign-in provider. Please sign in with your original provider (e.g., Google) and then link Apple in your account settings.', 'error')
     }
   }
 }
@@ -1542,6 +1544,10 @@ async function signInWithApple() {
         console.log('[TaskQuest] Popup issue is recoverable, attempting redirect fallback...')
         showNotification('Having trouble with the sign-in popup. Switching to a full-page sign-in instead.', 'warning')
       } else {
+        if (popupErr.code === 'auth/account-exists-with-different-credential') {
+          showNotification('This email is already used with another sign-in provider. Please sign in with the original provider (e.g., Google) first, then link Apple.', 'error')
+          return
+        }
         if (popupErr.code === 'auth/unauthorized-domain') {
           showNotification('Apple Sign-In blocked: unauthorized domain. Add your domain in Firebase Console (Auth → Authorized domains).', 'error')
           return
@@ -1564,6 +1570,8 @@ async function signInWithApple() {
       console.error('[TaskQuest] Full redirect error:', redirectErr)
       if (redirectErr.code === 'auth/unauthorized-domain') {
         showNotification('Apple Sign-In blocked: unauthorized domain. Add your domain in Firebase Console (Auth → Authorized domains).', 'error')
+      } else if (redirectErr.code === 'auth/account-exists-with-different-credential') {
+        showNotification('This email is already used with another sign-in provider. Please sign in with the original provider (e.g., Google) first, then link Apple.', 'error')
       } else if (redirectErr.code === 'auth/operation-not-supported-in-this-environment') {
         showNotification('Apple Sign-In not configured for this browser. Try using Safari on iOS or enable Apple in Firebase Console.', 'error')
       } else if (redirectErr.code === 'auth/invalid-oauth-provider') {
@@ -1769,6 +1777,31 @@ async function startTask(taskId, taskTitle) {
     if (!user) {
       showNotification("Please login first", "error")
       return
+    }
+
+    // If an in-progress submission already exists for this user+task, reuse it to avoid duplicates
+    try {
+      const existing = await db.collection('submissions')
+        .where('userId', '==', user.uid)
+        .where('taskId', '==', taskId)
+        .where('status', '==', 'in-progress')
+        .limit(1)
+        .get()
+      if (!existing.empty) {
+        const doc = existing.docs[0]
+        currentTaskInfo = {
+          id: taskId,
+          title: taskTitle,
+          inProgressSubmissionId: doc.id,
+          inProgressFamilyCode: doc.data().familyCode || null,
+        }
+        showNotification(`Resuming task: ${taskTitle}`, 'info')
+        // Open the finish modal to continue
+        finishTask(taskId, taskTitle)
+        return
+      }
+    } catch (e) {
+      console.warn('[TaskQuest] Could not check existing in-progress submission:', e)
     }
 
     // Create an in-progress submission right away
@@ -2464,8 +2497,23 @@ async function loadOngoingTasks() {
 
     grid.innerHTML = ""
 
+    // De-duplicate by userId+taskId; keep the newest by createdAt
+    const latestByKey = new Map()
     for (const doc of submissionsSnapshot.docs) {
       const submission = doc.data()
+      const key = `${submission.userId || ''}:${submission.taskId || ''}`
+      const existing = latestByKey.get(key)
+      const createdAt = submission.createdAt?.toMillis ? submission.createdAt.toMillis() : (submission.createdAt?.seconds ? submission.createdAt.seconds * 1000 : 0)
+      const prevCreatedAt = existing && existing.createdAt ? existing.createdAt : -1
+      if (!existing || createdAt >= prevCreatedAt) {
+        latestByKey.set(key, { doc, data: submission, createdAt })
+      }
+    }
+
+    const deduped = Array.from(latestByKey.values())
+    for (const entry of deduped) {
+      const doc = entry.doc
+      const submission = entry.data
 
       // Defensive check
       if (!submission.userId) continue
@@ -3722,7 +3770,8 @@ async function approveParentRequest(requestId) {
 
       // Update both request status and the requester user doc atomically
       tx.update(reqRef, { status: 'approved', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
-      tx.update(requesterRef, { familyCode: familyCode })
+      // Ensure co-parent role is explicitly set so they appear under co-parents list
+      tx.update(requesterRef, { familyCode: familyCode, role: 'parent' })
     })
 
     showNotification('Parent request approved — co-parent added.', 'success')
@@ -3730,6 +3779,7 @@ async function approveParentRequest(requestId) {
     // Reload profile to reflect updated co-parents count
     setTimeout(() => { 
       if (typeof loadParentProfile === 'function') loadParentProfile()
+      if (typeof loadCoparents === 'function') loadCoparents()
       // Close and refresh the modal
       const modals = document.querySelectorAll('.modal')
       if (modals.length > 0) {
