@@ -2210,13 +2210,6 @@ async function loadAvailableTasks() {
       return
     }
 
-    const tasksSnapshot = await db.collection("taskTemplates").where("familyCode", "==", familyCode).get()
-
-    if (tasksSnapshot.empty) {
-      tasksGrid.innerHTML = "<p>No tasks available yet. Ask your parent to create tasks!</p>"
-      return
-    }
-
     // Get in-progress submissions for this user
     const inProgressSnapshot = await db.collection("submissions")
       .where("userId", "==", user.uid)
@@ -2283,6 +2276,32 @@ async function loadAvailableTasks() {
       declinedTaskIds.add(doc.data().taskId)
     })
 
+    const tasksSnapshot = await db.collection("taskTemplates").where("familyCode", "==", familyCode).get()
+
+    // Cache-based short-circuit to avoid flicker when nothing changed
+    try { window.__cache = window.__cache || {} } catch(e) {}
+    const tasksKey = [
+      'tasks:', ...tasksSnapshot.docs.map(d => d.id).sort(),
+      '|inprog:', ...Array.from(inProgressTaskIds).sort(),
+      '|approved:', ...Array.from(approvedTaskIds).sort(),
+      '|pending:', ...Array.from(pendingTaskIds).sort(),
+      '|declined:', ...Array.from(declinedTaskIds).sort()
+    ].join('')
+
+    if (tasksSnapshot.empty) {
+      // Only rewrite if changed
+      if (window.__cache.childTasksKey !== tasksKey) {
+        tasksGrid.innerHTML = "<p>No tasks available yet. Ask your parent to create tasks!</p>"
+      }
+      window.__cache.childTasksKey = tasksKey
+      return
+    }
+
+    if (window.__cache.childTasksKey && window.__cache.childTasksKey === tasksKey) {
+      return
+    }
+    window.__cache.childTasksKey = tasksKey
+
     tasksGrid.innerHTML = ""
 
     tasksSnapshot.forEach((doc) => {
@@ -2343,10 +2362,21 @@ async function loadRewards() {
 
     const rewardsSnapshot = await db.collection("rewards").where("familyCode", "==", familyCode).get()
 
+    // Cache-based early exit to avoid flicker
+    try { window.__cache = window.__cache || {} } catch(e) {}
+    const rewardsKey = ['rewards:', ...rewardsSnapshot.docs.map(d => d.id).sort(), '|points:', String(currentPoints)].join('')
     if (rewardsSnapshot.empty) {
-      rewardsGrid.innerHTML = "<p>No rewards available yet. Ask your parent to add rewards!</p>"
+      if (window.__cache.rewardsKey !== rewardsKey) {
+        rewardsGrid.innerHTML = "<p>No rewards available yet. Ask your parent to add rewards!</p>"
+      }
+      window.__cache.rewardsKey = rewardsKey
       return
     }
+
+    if (window.__cache.rewardsKey && window.__cache.rewardsKey === rewardsKey) {
+      return
+    }
+    window.__cache.rewardsKey = rewardsKey
 
     const userDoc = await db.collection("users").doc(user.uid).get()
     const currentPoints = (userDoc.exists && userDoc.data().points) || 0
@@ -2399,10 +2429,26 @@ async function loadPendingApprovals() {
       .orderBy("submittedAt", "desc")
       .get()
 
+    // Cache-based early exit
+    try { window.__cache = window.__cache || {} } catch(e) {}
+    const pendingKey = submissionsSnapshot.docs.map(d => {
+      const s = d.data();
+      const t = s.submittedAt && s.submittedAt.seconds ? s.submittedAt.seconds : 0
+      return `${d.id}:${t}`
+    }).join('|') || 'empty'
+
     if (submissionsSnapshot.empty) {
-      grid.innerHTML = "<p>No pending tasks to review. Great job keeping up with approvals! ✅</p>"
+      if (window.__cache.pendingApprovalsKey !== pendingKey) {
+        grid.innerHTML = "<p>No pending tasks to review. Great job keeping up with approvals! ✅</p>"
+      }
+      window.__cache.pendingApprovalsKey = pendingKey
       return
     }
+
+    if (window.__cache.pendingApprovalsKey && window.__cache.pendingApprovalsKey === pendingKey) {
+      return
+    }
+    window.__cache.pendingApprovalsKey = pendingKey
 
     grid.innerHTML = ""
 
