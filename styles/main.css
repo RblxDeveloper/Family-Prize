@@ -247,11 +247,33 @@ body {
 .nav-link:hover {
   color: var(--text-primary);
   background: var(--surface);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 18px rgba(60,64,67,0.08);
 }
 
 .nav-link.active {
   color: var(--text-primary);
   background: var(--surface);
+  position: relative;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 22px rgba(60,64,67,0.10);
+}
+
+/* Decorative underline indicator for nav links */
+.nav-link::after {
+  content: '';
+  display: block;
+  height: 3px;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), #6fb1ff);
+  border-radius: 3px;
+  transition: width 220ms cubic-bezier(.2,.9,.2,1);
+  margin-top: 6px;
+}
+
+.nav-link:hover::after,
+.nav-link.active::after {
+  width: 100%;
 }
 
 /* Desktop: center nav-links */

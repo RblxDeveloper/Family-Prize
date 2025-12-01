@@ -1920,7 +1920,12 @@ function navigateToSection(target) {
     case "profile":
       const profileSection = document.getElementById("profile-section")
       if (profileSection) profileSection.style.display = "block"
-      loadChildProfile()
+      // Load either child or parent profile depending on page
+      if (typeof loadParentProfile === 'function' && window.location.pathname.includes('parent-dashboard')) {
+        loadParentProfile()
+      } else {
+        if (typeof loadChildProfile === 'function') loadChildProfile()
+      }
       break
     case "approvals":
       const approvalsSection = document.getElementById("approvals-section")
@@ -3417,6 +3422,227 @@ async function addParentInvitePrompt() {
   } catch (error) {
     console.error('[TaskQuest] addParentInvitePrompt error:', error)
     showNotification('Failed to create invite: ' + (error.message || String(error)), 'error')
+  }
+}
+
+// ----- Parent invite: new 8-digit code flow -----
+async function generateParentInviteCodeUI() {
+  try {
+    const user = auth.currentUser
+    if (!user) { showNotification('Please sign in as a parent.', 'error'); return }
+    showNotification('Generating invite code...', 'info')
+    const code = await generateParentInviteCode()
+    if (!code) throw new Error('Failed to create invite code')
+    // Show code to user and allow copying
+    const copied = await showInputModal(`Invite code created:\n\n${code}\n\nClick OK to copy it to clipboard.`, code)
+    if (copied !== null) {
+      try { await navigator.clipboard.writeText(code); showNotification('Invite code copied to clipboard!', 'success') } catch (e) { showNotification('Code: ' + code, 'success') }
+    }
+  } catch (error) {
+    console.error('[TaskQuest] generateParentInviteCodeUI error:', error)
+    showNotification('Failed to generate invite code: ' + (error.message || String(error)), 'error')
+  }
+}
+
+async function generateParentInviteCode() {
+  if (!auth.currentUser) throw new Error('Not signed in')
+  const user = auth.currentUser
+  const ownerId = user.uid
+  // attempt up to 12 times to generate a unique 8-digit numeric code
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const code = String(Math.floor(10000000 + Math.random() * 90000000)) // 8 digits
+    try {
+      const docRef = db.collection('parentInviteCodes').doc(code)
+      const doc = await docRef.get()
+      if (doc.exists) {
+        continue
+      }
+      // get some owner info (familyCode/name) if available
+      const ownerDoc = await db.collection('users').doc(ownerId).get()
+      const ownerName = ownerDoc.exists ? (ownerDoc.data().name || null) : null
+      const familyCode = ownerDoc.exists ? (ownerDoc.data().familyCode || null) : null
+      await docRef.set({ ownerId, ownerName, familyCode: familyCode || null, createdAt: firebase.firestore.FieldValue.serverTimestamp(), used: false })
+      return code
+    } catch (err) {
+      console.warn('[TaskQuest] generateParentInviteCode attempt failed:', err)
+      continue
+    }
+  }
+  throw new Error('Unable to generate unique invite code after several attempts')
+}
+
+// UI for entering someone else's parent-invite code (to request to join)
+async function enterParentInviteCodeUI() {
+  try {
+    const code = await showInputModal('Enter the 8-digit parent invite code you received:', '12345678')
+    if (!code) return
+    const trimmed = String(code).trim()
+    if (!/^[0-9]{8}$/.test(trimmed)) { showNotification('Please enter a valid 8-digit numeric code.', 'error'); return }
+    await requestParentAccessByCode(trimmed)
+  } catch (error) {
+    console.error('[TaskQuest] enterParentInviteCodeUI error:', error)
+    showNotification('Failed to request access: ' + (error.message || String(error)), 'error')
+  }
+}
+
+async function requestParentAccessByCode(code) {
+  try {
+    const user = auth.currentUser
+    if (!user) { showNotification('Please sign in to request access.', 'error'); return }
+    // lookup code
+    const codeDoc = await db.collection('parentInviteCodes').doc(code).get()
+    if (!codeDoc.exists) { showNotification('Invite code not found.', 'error'); return }
+    const ownerId = codeDoc.data().ownerId
+    if (ownerId === user.uid) { showNotification('This code is your own. Share it with other parents.', 'info'); return }
+
+    // create a parentInviteRequests document
+    await db.collection('parentInviteRequests').add({
+      code: code,
+      targetOwnerId: ownerId,
+      requesterId: user.uid,
+      requesterName: user.displayName || user.email || null,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      respondedAt: null
+    })
+
+    showNotification('Request sent to the code owner. They will be notified.', 'success')
+  } catch (error) {
+    console.error('[TaskQuest] requestParentAccessByCode error:', error)
+    showNotification('Failed to request parent access: ' + (error.message || String(error)), 'error')
+  }
+}
+
+// Owner: view incoming parent requests
+async function viewParentRequests() {
+  try {
+    const user = auth.currentUser
+    if (!user) { showNotification('Please sign in as a parent to view requests.', 'error'); return }
+    const snapshot = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).where('status', '==', 'pending').get()
+    if (snapshot.empty) { showNotification('No pending parent requests.', 'info'); return }
+    // Build HTML list
+    let listHtml = ''
+    snapshot.forEach(doc => {
+      const data = doc.data()
+      listHtml += `<div style="padding:8px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div>
+          <strong>${escapeHtml(data.requesterName || data.requesterId)}</strong><br>
+          <small>${escapeHtml(data.requesterEmail || '')}</small>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class='secondary-btn' onclick="approveParentRequest('${doc.id}')">Approve</button>
+          <button class='secondary-btn' onclick="declineParentRequest('${doc.id}')">Decline</button>
+        </div>
+      </div>`
+    })
+    // show in modal
+    const modal = document.createElement('div')
+    modal.className = 'modal'
+    modal.style.display = 'block'
+    const content = document.createElement('div')
+    content.className = 'modal-content'
+    content.style.maxWidth = '520px'
+    content.innerHTML = `<span class="close">&times;</span><h3>Pending Parent Requests</h3><div style="margin-top:12px">${listHtml}</div>`
+    modal.appendChild(content)
+    document.body.appendChild(modal)
+    content.querySelector('.close').addEventListener('click', () => { try { document.body.removeChild(modal) } catch(e){} })
+  } catch (error) {
+    console.error('[TaskQuest] viewParentRequests error:', error)
+    showNotification('Failed to load parent requests: ' + (error.message || String(error)), 'error')
+  }
+}
+
+async function approveParentRequest(requestId) {
+  try {
+    const reqRef = db.collection('parentInviteRequests').doc(requestId)
+    const reqDoc = await reqRef.get()
+    if (!reqDoc.exists) { showNotification('Request not found', 'error'); return }
+    const data = reqDoc.data()
+    if (data.status !== 'pending') { showNotification('Request already handled', 'info'); return }
+    // get owner's familyCode
+    const owner = auth.currentUser
+    const ownerDoc = await db.collection('users').doc(owner.uid).get()
+    const familyCode = ownerDoc.exists ? ownerDoc.data().familyCode : null
+    // set request to approved
+    await reqRef.update({ status: 'approved', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    // assign familyCode to requester user doc
+    await db.collection('users').doc(data.requesterId).update({ familyCode: familyCode })
+    showNotification('Parent request approved — co-parent added.', 'success')
+  } catch (error) {
+    console.error('[TaskQuest] approveParentRequest error:', error)
+    showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
+  }
+}
+
+async function declineParentRequest(requestId) {
+  try {
+    await db.collection('parentInviteRequests').doc(requestId).update({ status: 'declined', respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    showNotification('Parent request declined.', 'success')
+  } catch (error) {
+    console.error('[TaskQuest] declineParentRequest error:', error)
+    showNotification('Failed to decline request: ' + (error.message || String(error)), 'error')
+  }
+}
+
+function openManageParents() {
+  // simple navigation helper — reuse viewParentRequests
+  viewParentRequests()
+}
+
+// small helper to escape HTML when rendering user-provided strings
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str).replace(/[&<>"'`]/g, function (s) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;', '`':'&#96;'})[s] })
+}
+
+// Load parent profile information (for parent-dashboard)
+async function loadParentProfile() {
+  try {
+    const user = auth.currentUser
+    if (!user) return
+    const userDoc = await db.collection('users').doc(user.uid).get()
+    if (!userDoc.exists) return
+    const data = userDoc.data()
+    const nameEl = document.getElementById('parentProfileName')
+    const emailEl = document.getElementById('parentProfileEmail')
+    const familyEl = document.getElementById('familyCodeParent')
+    if (nameEl) nameEl.textContent = data.name || (user.email ? user.email.split('@')[0] : 'Parent')
+    if (emailEl) emailEl.textContent = user.email || ''
+    if (familyEl) familyEl.textContent = data.familyCode || '------'
+
+    // Count managed children and co-parents
+    let childrenCount = 0
+    let parentsCount = 0
+    if (data.familyCode) {
+      const childrenSnap = await db.collection('users').where('familyCode', '==', data.familyCode).where('role', '==', 'child').get()
+      childrenCount = childrenSnap.size
+      const parentsSnap = await db.collection('users').where('familyCode', '==', data.familyCode).where('role', '==', 'parent').get()
+      parentsCount = Math.max(0, parentsSnap.size - 1)
+    }
+    const childrenEl = document.getElementById('managedChildrenCount')
+    const parentsEl = document.getElementById('linkedParentsCount')
+    if (childrenEl) childrenEl.textContent = String(childrenCount)
+    if (parentsEl) parentsEl.textContent = String(parentsCount)
+
+    // Recent activity - inbox/outbox of parent invite requests
+    const activityEl = document.getElementById('parentActivityList')
+    if (!activityEl) return
+    activityEl.innerHTML = '<p>Loading recent activity...</p>'
+    const inbox = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).orderBy('createdAt', 'desc').limit(6).get()
+    const outbox = await db.collection('parentInviteRequests').where('requesterId', '==', user.uid).orderBy('createdAt', 'desc').limit(6).get()
+    let html = ''
+    inbox.forEach(doc => {
+      const d = doc.data()
+      html += `<div class="activity-item">Request from <strong>${escapeHtml(d.requesterName||d.requesterId)}</strong> — <em>${escapeHtml(d.status)}</em></div>`
+    })
+    outbox.forEach(doc => {
+      const d = doc.data()
+      html += `<div class="activity-item">Requested access to <strong>code ${escapeHtml(d.code)}</strong> — <em>${escapeHtml(d.status)}</em></div>`
+    })
+    if (!html) html = '<p>No recent activity.</p>'
+    activityEl.innerHTML = html
+  } catch (error) {
+    console.error('[TaskQuest] loadParentProfile error:', error)
   }
 }
 

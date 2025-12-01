@@ -21,6 +21,7 @@
             <a href="#approvals" class="nav-link active" onclick="navigateToSection('approvals'); return false;">Approvals</a>
             <a href="#manage" class="nav-link" onclick="navigateToSection('manage'); return false;">Manage</a>
             <a href="#settings" class="nav-link" onclick="navigateToSection('settings'); return false;">Settings</a>
+            <a href="#profile" class="nav-link" onclick="navigateToSection('profile'); return false;">Profile</a>
         </div>
 
         <!-- Profile avatar + dropdown -->
@@ -64,6 +65,46 @@
                 <h3 class="subsection-title">Family Join Requests</h3>
                 <div id="pendingFamilyRequests">
                     <p>Loading pending family requests...</p>
+                </div>
+            </div>
+        </section>
+        <!-- Profile Section -->
+        <section id="profile-section" class="dashboard-section" style="display: none;">
+            <h2 class="section-title">Profile</h2>
+            <div class="profile-wrapper">
+                <div class="profile-card">
+                    <div class="profile-header">
+                        <div class="profile-avatar">👤</div>
+                        <div class="profile-info">
+                            <h3 id="parentProfileName">Loading...</h3>
+                            <p id="parentProfileEmail">Loading...</p>
+                        </div>
+                    </div>
+
+                    <div class="profile-stats">
+                        <div class="stat-box">
+                            <div class="stat-value" id="managedChildrenCount">0</div>
+                            <div class="stat-label">Children Managed</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="linkedParentsCount">0</div>
+                            <div class="stat-label">Co-Parents</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="familyCodeParent">------</div>
+                            <div class="stat-label">Family Code</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:12px; display:flex; gap:8px;">
+                        <button class="primary-btn" onclick="copyFamilyCode()">Copy Family Code</button>
+                        <button class="secondary-btn" onclick="openManageParents()">Manage Parents</button>
+                    </div>
+                </div>
+                <div class="activity-section">
+                    <h3 class="section-title">Recent Activity</h3>
+                    <div id="parentActivityList">
+                        <p>Loading recent activity...</p>
+                    </div>
                 </div>
             </div>
         </section>
@@ -128,8 +169,12 @@
                     <div class="settings-card">
                         <div class="settings-icon">➕</div>
                         <h3>Add Another Parent</h3>
-                        <p>Invite another guardian/parent to manage this family's account.</p>
-                        <button class="secondary-btn" onclick="addParentInvitePrompt()">Invite Parent</button>
+                        <p>Generate or enter a parent invite code so other guardians can request access.</p>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                            <button class="secondary-btn" onclick="generateParentInviteCodeUI()">Generate 8-digit Code</button>
+                            <button class="secondary-btn" onclick="enterParentInviteCodeUI()">Enter Invite Code</button>
+                            <button class="secondary-btn" onclick="viewParentRequests()">View Parent Requests</button>
+                        </div>
                     </div>
             </div>
         </section>
