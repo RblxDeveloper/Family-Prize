@@ -1447,6 +1447,16 @@ document.addEventListener("DOMContentLoaded", () => {
         loadParentRewards()
         initializeSectionVisibility()
         displayFamilyCode()
+        try {
+          // Attach family requests listener for real-time updates
+          if (window.familyRequestsUnsubscribe) {
+            try { window.familyRequestsUnsubscribe() } catch(e){}
+            window.familyRequestsUnsubscribe = null
+          }
+          window.familyRequestsUnsubscribe = setupFamilyRequestsListener()
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to attach familyRequests listener on load:', e)
+        }
       }
     } else {
       // User not logged in, redirect to index if not already there
@@ -1515,6 +1525,16 @@ function navigateToSection(target) {
       if (approvalsSection) approvalsSection.style.display = "block"
       loadPendingApprovals()
       loadOngoingTasks()
+      // Ensure the familyRequests listener is active when viewing approvals
+      try {
+        if (window.familyRequestsUnsubscribe) {
+          try { window.familyRequestsUnsubscribe() } catch(e){}
+          window.familyRequestsUnsubscribe = null
+        }
+        window.familyRequestsUnsubscribe = setupFamilyRequestsListener()
+      } catch (e) {
+        console.warn('[TaskQuest] Failed to attach familyRequests listener on approvals:', e)
+      }
       break
     case "manage":
       const manageSection = document.getElementById("manage-section")
@@ -3010,6 +3030,58 @@ async function declineFamilyRequest(requestId) {
   } catch (error) {
     console.error("[TaskQuest] Decline request error:", error)
     showNotification("Failed to decline request: " + error.message, "error")
+  }
+}
+
+// Debug helper: fetch and log raw pending requests (familyCode + parentId queries)
+async function showRawPendingRequests() {
+  try {
+    const user = auth.currentUser
+    if (!user) {
+      console.warn('[TaskQuest] showRawPendingRequests: not signed in')
+      return
+    }
+
+    const parentDoc = await db.collection('users').doc(user.uid).get()
+    if (!parentDoc.exists) {
+      console.warn('[TaskQuest] showRawPendingRequests: parent doc missing')
+      return
+    }
+    const familyCode = parentDoc.data().familyCode
+
+    const results = { byFamilyCode: [], byParentId: [] }
+
+    if (familyCode) {
+      try {
+        const snap = await db.collection('familyRequests').where('familyCode', '==', familyCode).where('status', '==', 'pending').get()
+        snap.forEach(d => results.byFamilyCode.push({ id: d.id, data: d.data() }))
+      } catch (e) {
+        console.warn('[TaskQuest] showRawPendingRequests familyCode query failed:', e)
+      }
+    }
+
+    try {
+      const snap2 = await db.collection('familyRequests').where('parentId', '==', user.uid).where('status', '==', 'pending').get()
+      snap2.forEach(d => results.byParentId.push({ id: d.id, data: d.data() }))
+    } catch (e) {
+      console.warn('[TaskQuest] showRawPendingRequests parentId query failed:', e)
+    }
+
+    console.log('[TaskQuest] Raw pending requests:', results)
+
+    const container = document.getElementById('pendingFamilyRequests')
+    if (!container) return
+
+    const pre = document.createElement('pre')
+    pre.style.maxHeight = '240px'
+    pre.style.overflow = 'auto'
+    pre.textContent = JSON.stringify(results, null, 2)
+
+    // Insert at top for visibility
+    container.insertBefore(pre, container.firstChild)
+  } catch (error) {
+    console.error('[TaskQuest] showRawPendingRequests error:', error)
+    showNotification('Failed to fetch raw requests: ' + (error.message || String(error)), 'error')
   }
 }
 
