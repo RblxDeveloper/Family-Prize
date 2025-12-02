@@ -89,8 +89,8 @@ service cloud.firestore {
       // Read: user's own or family members
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isSameFamily(resource.data.familyCode));
 
-      // Parents can update (approve/decline)
-      allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+      // Parents can update (approve/decline) or delete (when declining)
+      allow update, delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
     }
     
     // Redeemed Rewards collection
@@ -106,19 +106,31 @@ service cloud.firestore {
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
     
-    // Family Requests collection - for child join requests
+    // Family Requests collection - for both child and parent join requests
     match /familyRequests/{requestId} {
-      // ANY authenticated user can create requests (no role check to avoid chicken-and-egg issue)
-      allow create: if isSignedIn() && request.resource.data.childId == request.auth.uid;
+      // ANY authenticated user can create requests (supports both childId and requesterId)
+      // This allows both children and parents to request to join a family
+      allow create: if isSignedIn() && (
+        request.resource.data.childId == request.auth.uid 
+        || request.resource.data.requesterId == request.auth.uid
+      );
       
-      // Parents can read requests for their family
-      allow read: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
+      // Parents can read requests for their family; requesters can read their own
+      allow read: if isSignedIn() && (
+        (isParent() && resource.data.familyCode == getUserData().familyCode)
+        || resource.data.childId == request.auth.uid
+        || resource.data.requesterId == request.auth.uid
+      );
       
       // Parents can approve/decline requests in their family
       allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
       
-      // Only pending requests can be deleted by parent
-      allow delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode && resource.data.status == 'pending';
+      // Only pending requests can be deleted by parent or the requester themselves
+      allow delete: if isSignedIn() && resource.data.status == 'pending' && (
+        (isParent() && resource.data.familyCode == getUserData().familyCode)
+        || resource.data.childId == request.auth.uid
+        || resource.data.requesterId == request.auth.uid
+      );
     }
     
     // Family Invites collection - for parent invite flow

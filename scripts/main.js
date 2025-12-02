@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b27 - DECLINED FIX + FORCE SERVER')
+console.log('[TaskQuest] main.js is loading... version b28 - NOTIFICATIONS + PERMISSIONS FIX')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -1819,8 +1819,10 @@ async function completeAppleSignup(role) {
 }
 
 function closeLoginModal() {
-  document.getElementById("loginModal").style.display = "none"
-  document.getElementById("loginForm").reset()
+  const modal = document.getElementById("loginModal")
+  if (modal) modal.style.display = "none"
+  const form = document.getElementById("loginForm")
+  if (form) form.reset()
   currentAuthMode = "login"
 }
 
@@ -4836,12 +4838,13 @@ function setupParentsListener() {
         const count = snapshot.size
         const prev = window.__cache.parentsCount
         
-        // Only show notification if we had a previous count AND it increased
-        if (prev !== undefined && count > prev) {
+        // Only show notification if we had a previous count AND it increased AND it's not the first snapshot
+        if (prev !== undefined && count > prev && window.__cache.parentsListenerInitialized) {
           showNotification('A new parent joined your family.', 'success')
         }
         
         window.__cache.parentsCount = count
+        window.__cache.parentsListenerInitialized = true
         // Reload Family list
         loadCoparents()
       }, (error) => {
@@ -4925,19 +4928,19 @@ async function loadPendingFamilyRequests() {
       const timeAgo = createdAt ? getTimeAgo(createdAt) : 'Just now'
       card.innerHTML = `
         <div class="request-header">
-          <h4>${displayName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
-          <small>${displayEmail}</small>
+          <h4 style="margin: 0 0 4px 0; font-size: 16px;">${displayName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
+          <small style="color: #666; word-break: break-all;">${displayEmail}</small>
         </div>
-        <div class="request-body">
-          <p><strong>ID:</strong> ${requesterId}</p>
-          <p><strong>Family Code:</strong> ${req.familyCode || '—'}</p>
-          <p><strong>Submitted:</strong> ${timeAgo}</p>
+        <div class="request-body" style="margin: 12px 0;">
+          <p style="margin: 4px 0; font-size: 13px;"><strong>ID:</strong> <span style="font-size: 11px; word-break: break-all;">${requesterId}</span></p>
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Family Code:</strong> ${req.familyCode || '—'}</p>
+          <p style="margin: 4px 0; font-size: 13px;"><strong>Submitted:</strong> ${timeAgo}</p>
         </div>
         <div class="request-actions" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
-          <button class="primary-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" style="flex:1; min-width:100px; font-size:13px; padding:8px 12px;">
+          <button class="primary-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" style="flex:1; min-width:120px; font-size:14px; padding:10px 16px;">
             ✓ Approve
           </button>
-          <button class="secondary-btn" onclick="declineFamilyRequest('${requestId}')" style="flex:1; min-width:100px; font-size:13px; padding:8px 12px;">
+          <button class="secondary-btn" onclick="declineFamilyRequest('${requestId}')" style="flex:1; min-width:120px; font-size:14px; padding:10px 16px;">
             ✗ Decline
           </button>
         </div>
