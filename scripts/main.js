@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b24 - REAL-TIME UPDATES')
+console.log('[TaskQuest] main.js is loading... version b25 - FULL REAL-TIME')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -2102,6 +2102,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Set up real-time listeners that work across all sections
         setupParentTasksListener()
         setupOngoingTasksListener()
+        setupPendingApprovalsListener()
         try {
           // Attach family requests listener for real-time updates
           if (window.familyRequestsUnsubscribe) {
@@ -2801,6 +2802,34 @@ function setupOngoingTasksListener() {
     })
   } catch (error) {
     console.error('[TaskQuest] setupOngoingTasksListener error:', error)
+  }
+}
+
+// Set up real-time listener for pending approvals so parent sees new submissions instantly
+let pendingApprovalsUnsubscribe = null
+function setupPendingApprovalsListener() {
+  try {
+    const user = auth.currentUser
+    if (!user || !db) return
+    getFamilyCodeForUser(user).then((familyCode) => {
+      if (!familyCode) return
+
+      if (pendingApprovalsUnsubscribe) {
+        try { pendingApprovalsUnsubscribe(); } catch (e) {}
+        pendingApprovalsUnsubscribe = null
+      }
+
+      pendingApprovalsUnsubscribe = db.collection('submissions')
+        .where('familyCode', '==', familyCode)
+        .where('status', '==', 'pending')
+        .onSnapshot(() => {
+          loadPendingApprovals().catch(() => {})
+        }, (err) => {
+          console.warn('[TaskQuest] pending approvals listener error:', err)
+        })
+    })
+  } catch (error) {
+    console.error('[TaskQuest] setupPendingApprovalsListener error:', error)
   }
 }
 
@@ -4805,14 +4834,16 @@ function setupParentsListener() {
       .onSnapshot((snapshot) => {
         try { window.__cache = window.__cache || {} } catch(e) {}
         const count = snapshot.size
-        const prev = window.__cache.parentsCount || 0
+        const prev = window.__cache.parentsCount
+        
+        // Only show notification if we had a previous count AND it increased
+        if (prev !== undefined && count > prev) {
+          showNotification('A new parent joined your family.', 'success')
+        }
+        
         window.__cache.parentsCount = count
         // Reload Family list
         loadCoparents()
-        // Notify only when the number increases (new parent)
-        if (count > prev && prev !== 0) {
-          showNotification('A new parent joined your family.', 'success')
-        }
       }, (error) => {
         if (error && error.code === 'permission-denied') {
           console.debug('[TaskQuest] Parents listener permission denied')
@@ -4902,11 +4933,11 @@ async function loadPendingFamilyRequests() {
           <p><strong>Family Code:</strong> ${req.familyCode || '—'}</p>
           <p><strong>Submitted:</strong> ${timeAgo}</p>
         </div>
-        <div class="request-actions">
-          <button class="btn-approve" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')">
+        <div class="request-actions" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+          <button class="primary-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" style="flex:1; min-width:100px; font-size:13px; padding:8px 12px;">
             ✓ Approve
           </button>
-          <button class="btn-decline" onclick="declineFamilyRequest('${requestId}')">
+          <button class="secondary-btn" onclick="declineFamilyRequest('${requestId}')" style="flex:1; min-width:100px; font-size:13px; padding:8px 12px;">
             ✗ Decline
           </button>
         </div>
