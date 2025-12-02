@@ -2074,6 +2074,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
       } else if (currentPage === "parent-dashboard.html") {
+        // Hide all sections immediately to prevent flashing
+        hideAllSections()
+        
         loadPendingApprovals()
         loadOngoingTasks()
         loadChildren()
@@ -2089,15 +2092,17 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
           const lastSection = localStorage.getItem('lastSection')
           if (lastSection) {
-            // Restore saved tab without delay
+            // Restore saved tab immediately
             navigateToSection(lastSection)
           } else {
             // No saved tab, show default (approvals)
-            initializeSectionVisibility()
+            const approvalsSection = document.getElementById("approvals-section")
+            if (approvalsSection) approvalsSection.style.display = "block"
           }
         } catch (e) {
           console.debug('[TaskQuest] Failed to restore last section:', e)
-          initializeSectionVisibility()
+          const approvalsSection = document.getElementById("approvals-section")
+          if (approvalsSection) approvalsSection.style.display = "block"
         }
         try {
           // Attach family requests listener for real-time updates
@@ -4103,17 +4108,22 @@ function setupParentInviteOutcomeListener() {
               continue
             }
             
-            // Apply familyCode
-            await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
+            // Mark as processed BEFORE doing anything else to prevent re-triggering
             processedRequestIds.add(reqDoc.id)
-            showNotification('You have been linked to this family as a parent!', 'success')
             
-            // Mark as acknowledged
+            // Mark as acknowledged IMMEDIATELY in Firestore
             try { 
               await db.collection('parentInviteRequests').doc(reqDoc.id).update({ 
                 acknowledgedByRequesterAt: firebase.firestore.FieldValue.serverTimestamp() 
               }) 
-            } catch(e) {}
+            } catch(e) {
+              console.warn('[TaskQuest] Failed to mark request as acknowledged:', e)
+            }
+            
+            // Apply familyCode
+            await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
+            
+            showNotification('You have been linked to this family as a parent!', 'success')
             
             // Refresh UI if on parent dashboard
             if (window.location.pathname.includes('parent-dashboard')) {
