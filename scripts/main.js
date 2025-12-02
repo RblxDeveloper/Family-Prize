@@ -1,6 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
+console.log('[TaskQuest] main.js is loading... version b16')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -2208,67 +2209,67 @@ function navigateToSection(target) {
       }
     })
 
-  switch (target) {
-    case "tasks":
-      const pointsHero = document.querySelector(".points-hero")
-      const tasksSection = document.getElementById("tasks-section")
-      if (pointsHero) pointsHero.style.display = "block"
-      if (tasksSection) tasksSection.style.display = "block"
-      break
-    case "rewards":
-      const rewardsSection = document.getElementById("rewards-section")
-      if (rewardsSection) rewardsSection.style.display = "block"
-      break
-    case "profile":
-      const profileSection = document.getElementById("profile-section")
-      if (profileSection) profileSection.style.display = "block"
-      // Load either child or parent profile depending on page
-      if (typeof loadParentProfile === 'function' && window.location.pathname.includes('parent-dashboard')) {
-        loadParentProfile()
-      } else {
-        if (typeof loadChildProfile === 'function') loadChildProfile()
-      }
-      break
-    case "coparents":
-      const coparentsSection = document.getElementById("coparents-section")
-      if (coparentsSection) coparentsSection.style.display = "block"
-      if (typeof loadCoparents === 'function') loadCoparents()
-      break
-    case "approvals":
-      const approvalsSection = document.getElementById("approvals-section")
-      if (approvalsSection) approvalsSection.style.display = "block"
-      loadPendingApprovals()
-      loadOngoingTasks()
-      // Ensure the familyRequests listener is active when viewing approvals
-      try {
-        if (window.familyRequestsUnsubscribe) {
-          try { window.familyRequestsUnsubscribe() } catch(e){}
-          window.familyRequestsUnsubscribe = null
+    switch (target) {
+      case "tasks":
+        const pointsHero = document.querySelector(".points-hero")
+        const tasksSection = document.getElementById("tasks-section")
+        if (pointsHero) pointsHero.style.display = "block"
+        if (tasksSection) tasksSection.style.display = "block"
+        break
+      case "rewards":
+        const rewardsSection = document.getElementById("rewards-section")
+        if (rewardsSection) rewardsSection.style.display = "block"
+        break
+      case "profile":
+        const profileSection = document.getElementById("profile-section")
+        if (profileSection) profileSection.style.display = "block"
+        // Load either child or parent profile depending on page
+        if (typeof loadParentProfile === 'function' && window.location.pathname.includes('parent-dashboard')) {
+          loadParentProfile()
+        } else {
+          if (typeof loadChildProfile === 'function') loadChildProfile()
         }
-        window.familyRequestsUnsubscribe = setupFamilyRequestsListener()
-      } catch (e) {
-        console.warn('[TaskQuest] Failed to attach familyRequests listener on approvals:', e)
-      }
-      break
-    case "manage":
-      const manageSection = document.getElementById("manage-section")
-      if (manageSection) manageSection.style.display = "block"
-      loadParentTasks()
-      loadParentRewards()
-      loadChildren()
-      break
-    case "settings":
-      const settingsSection = document.getElementById("settings-section")
-      if (settingsSection) settingsSection.style.display = "block"
-      displayFamilyCode()
-      break
-    default:
-      const section = document.getElementById(`${target}-section`)
-      if (section) {
-        section.style.display = "block"
-      } else {
-        console.warn('[TaskQuest] navigateToSection: section element not found for', target)
-      }
+        break
+      case "coparents":
+        const coparentsSection = document.getElementById("coparents-section")
+        if (coparentsSection) coparentsSection.style.display = "block"
+        if (typeof loadCoparents === 'function') loadCoparents()
+        break
+      case "approvals":
+        const approvalsSection = document.getElementById("approvals-section")
+        if (approvalsSection) approvalsSection.style.display = "block"
+        loadPendingApprovals()
+        loadOngoingTasks()
+        // Ensure the familyRequests listener is active when viewing approvals
+        try {
+          if (window.familyRequestsUnsubscribe) {
+            try { window.familyRequestsUnsubscribe() } catch(e){}
+            window.familyRequestsUnsubscribe = null
+          }
+          window.familyRequestsUnsubscribe = setupFamilyRequestsListener()
+        } catch (e) {
+          console.warn('[TaskQuest] Failed to attach familyRequests listener on approvals:', e)
+        }
+        break
+      case "manage":
+        const manageSection = document.getElementById("manage-section")
+        if (manageSection) manageSection.style.display = "block"
+        loadParentTasks()
+        loadParentRewards()
+        loadChildren()
+        break
+      case "settings":
+        const settingsSection = document.getElementById("settings-section")
+        if (settingsSection) settingsSection.style.display = "block"
+        displayFamilyCode()
+        break
+      default:
+        const section = document.getElementById(`${target}-section`)
+        if (section) {
+          section.style.display = "block"
+        } else {
+          console.warn('[TaskQuest] navigateToSection: section element not found for', target)
+        }
     }
   } catch (e) {
     console.error('[TaskQuest] navigateToSection error:', e)
