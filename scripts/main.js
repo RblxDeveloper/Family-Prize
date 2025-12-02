@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b30 - DEBUG APPROVAL')
+console.log('[TaskQuest] main.js is loading... version b31 - AUTO LINK + BLACK THEME')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -213,11 +213,13 @@ if (auth) {
         setupParentProfileListener(user.uid)
       }
       
-      db.collection('users').doc(user.uid).get().then((doc) => {
+      db.collection('users').doc(user.uid).get().then(async (doc) => {
         if (doc.exists) {
           const data = doc.data()
           // Cache loaded user data for quick use by listeners
           try { window.loadedUserData = data } catch (e) {}
+          
+          // Check if account is disabled
           if (data.disabled === true && data.role === 'child') {
             showNotification('This account has been disabled by a parent. You have been signed out.', 'error')
             // Force sign out for disabled child accounts
@@ -225,10 +227,59 @@ if (auth) {
               sessionStorage.setItem('loggedOut', 'true')
               navigateTo('index.html')
             }).catch((e) => console.warn('[TaskQuest] Sign-out after disable failed:', e))
+            return
+          }
+          
+          // Check for approved family requests and auto-link the user
+          try {
+            // Check both childId and requesterId (for parent requests)
+            const childQuery = db.collection('familyRequests')
+              .where('status', '==', 'approved')
+              .where('childId', '==', user.uid)
+              .limit(1)
+            
+            const parentQuery = db.collection('familyRequests')
+              .where('status', '==', 'approved')
+              .where('requesterId', '==', user.uid)
+              .limit(1)
+            
+            const [childRequests, parentRequests] = await Promise.all([
+              childQuery.get().catch(() => ({ empty: true })),
+              parentQuery.get().catch(() => ({ empty: true }))
+            ])
+            
+            const approvedRequests = !childRequests.empty ? childRequests : (!parentRequests.empty ? parentRequests : null)
+            
+            if (approvedRequests && !approvedRequests.empty) {
+              const request = approvedRequests.docs[0].data()
+              const requestId = approvedRequests.docs[0].id
+              
+              // If user doesn't have a familyCode yet, update it from the approved request
+              if (!data.familyCode && request.approvedFamilyCode) {
+                console.log('[TaskQuest] Auto-linking user to approved family:', request.approvedFamilyCode)
+                const roleType = request.roleResponded || data.role || 'child'
+                await db.collection('users').doc(user.uid).update({
+                  familyCode: request.approvedFamilyCode,
+                  displayName: `${data.name || (roleType === 'parent' ? 'Parent' : 'Child')} (${roleType})`,
+                  role: roleType
+                })
+                
+                // Delete the processed request
+                await db.collection('familyRequests').doc(requestId).delete()
+                
+                console.log('[TaskQuest] User successfully linked to family')
+                showNotification('You have been linked to your family! 🎉', 'success')
+                
+                // Reload the page to reflect changes
+                setTimeout(() => window.location.reload(), 1500)
+              }
+            }
+          } catch (linkError) {
+            console.warn('[TaskQuest] Could not check for approved requests:', linkError)
           }
         }
       }).catch((err) => {
-        console.warn('[TaskQuest] Could not verify disabled status:', err)
+        console.warn('[TaskQuest] Could not verify user status:', err)
       })
     }
     
@@ -4927,34 +4978,34 @@ async function loadPendingFamilyRequests() {
       const createdAt = req.createdAt ? (req.createdAt.toDate ? req.createdAt.toDate() : new Date(req.createdAt)) : null
       const timeAgo = createdAt ? getTimeAgo(createdAt) : 'Just now'
       card.innerHTML = `
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
             <div style="flex: 1; min-width: 200px;">
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                <h4 style="margin: 0; font-size: 16px; font-weight: 600;">${displayName.replace(/ \(.*?\)$/, '')}</h4>
-                <span style="background: ${isGuardian ? '#4CAF50' : '#2196F3'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap;">${isGuardian ? 'Guardian' : 'Child'}</span>
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+                <h4 style="margin: 0; font-size: 16px; font-weight: 600; color: #000;">${displayName.replace(/ \(.*?\)$/, '')}</h4>
+                <span style="background: #000; color: white; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: 0.5px;">${isGuardian ? 'GUARDIAN' : 'CHILD'}</span>
               </div>
               <div style="color: #666; font-size: 13px; word-break: break-all; margin-bottom: 4px;">${displayEmail}</div>
               <div style="color: #999; font-size: 12px;">Submitted ${timeAgo}</div>
             </div>
           </div>
           
-          <div style="background: #f5f5f5; padding: 10px 12px; border-radius: 6px; font-size: 12px;">
-            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: start;">
-              <span style="color: #666; font-weight: 600;">ID:</span>
-              <span style="font-family: monospace; word-break: break-all; color: #333;">${requesterId}</span>
-              <span style="color: #666; font-weight: 600;">Family Code:</span>
-              <span style="font-weight: 600; color: #2196F3;">${req.familyCode || '—'}</span>
+          <div style="background: #fafafa; padding: 12px 14px; border-radius: 6px; font-size: 12px; border: 1px solid #e8e8e8;">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: start;">
+              <span style="color: #000; font-weight: 600;">ID:</span>
+              <span style="font-family: monospace; word-break: break-all; color: #555; font-size: 11px;">${requesterId}</span>
+              <span style="color: #000; font-weight: 600;">Family Code:</span>
+              <span style="font-weight: 700; color: #000; letter-spacing: 0.5px;">${req.familyCode || '—'}</span>
             </div>
           </div>
           
-          <div style="display: flex; gap: 10px; margin-top: 4px;">
-            <button class="primary-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" 
-              style="flex: 1; font-size: 14px; font-weight: 600; padding: 12px 20px; border-radius: 8px; border: none; background: #4CAF50; color: white; cursor: pointer; transition: all 0.2s;">
+          <div class="request-buttons-container" style="display: flex; gap: 10px; margin-top: 4px;">
+            <button class="approve-request-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" 
+              style="flex: 1; font-size: 14px; font-weight: 600; padding: 12px 20px; border-radius: 6px; border: 2px solid #000; background: #000; color: white; cursor: pointer; transition: all 0.2s; min-width: 120px;">
               ✓ Approve
             </button>
-            <button class="secondary-btn" onclick="declineFamilyRequest('${requestId}')" 
-              style="flex: 1; font-size: 14px; font-weight: 600; padding: 12px 20px; border-radius: 8px; border: 2px solid #f44336; background: white; color: #f44336; cursor: pointer; transition: all 0.2s;">
+            <button class="decline-request-btn" onclick="declineFamilyRequest('${requestId}')" 
+              style="flex: 1; font-size: 14px; font-weight: 600; padding: 12px 20px; border-radius: 6px; border: 2px solid #000; background: white; color: #000; cursor: pointer; transition: all 0.2s; min-width: 120px;">
               ✗ Decline
             </button>
           </div>
@@ -4971,83 +5022,22 @@ async function loadPendingFamilyRequests() {
 async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequested = 'child') {
   try {
     console.log('[TaskQuest] ===== APPROVAL PROCESS STARTED =====')
-    console.log('[TaskQuest] Parent approving request:', { requestId, requesterId, familyCode, roleRequested })
-    console.log('[TaskQuest] Current user:', auth.currentUser ? auth.currentUser.uid : 'NOT LOGGED IN')
+    console.log('[TaskQuest] Request details:', { requestId, requesterId, familyCode, roleRequested })
     
-    // Get current parent's data to verify permissions
-    const currentParentDoc = await db.collection('users').doc(auth.currentUser.uid).get()
-    const parentData = currentParentDoc.data()
-    console.log('[TaskQuest] Parent data:', { 
-      role: parentData.role, 
-      familyCode: parentData.familyCode,
-      matchesRequestCode: parentData.familyCode === familyCode 
+    // Simply mark the request as approved - the requester will update their own profile when they next log in
+    await db.collection('familyRequests').doc(requestId).update({
+      status: 'approved',
+      roleResponded: roleRequested,
+      approvedBy: auth.currentUser.uid,
+      approvedFamilyCode: familyCode, // Store the family code for the child to pick up
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
     })
     
-    // STEP 1: Try to update the familyRequests document
-    console.log('[TaskQuest] STEP 1: Updating familyRequests document...')
-    try {
-      await db.collection('familyRequests').doc(requestId).update({
-        status: 'approved',
-        roleResponded: roleRequested,
-        approvedBy: auth.currentUser.uid,
-        respondedAt: firebase.firestore.FieldValue.serverTimestamp()
-      })
-      console.log('[TaskQuest] ✓ Step 1 SUCCESS: Request marked as approved')
-    } catch (step1Error) {
-      console.error('[TaskQuest] ✗ Step 1 FAILED:', step1Error)
-      console.error('[TaskQuest] Error code:', step1Error.code)
-      console.error('[TaskQuest] Error message:', step1Error.message)
-      throw new Error(`Failed to update request status: ${step1Error.message}`)
-    }
-
-    // STEP 2: Get the requester's current name
-    console.log('[TaskQuest] STEP 2: Fetching requester data...')
-    let requesterName = 'Child'
-    let requesterData = null
-    try {
-      const requesterDoc = await db.collection('users').doc(requesterId).get()
-      if (requesterDoc.exists) {
-        requesterData = requesterDoc.data()
-        requesterName = requesterData.name || 'Child'
-        console.log('[TaskQuest] ✓ Step 2 SUCCESS: Requester data fetched:', { 
-          name: requesterName, 
-          currentFamilyCode: requesterData.familyCode,
-          role: requesterData.role 
-        })
-      } else {
-        console.warn('[TaskQuest] ⚠ Step 2 WARNING: Requester document does not exist')
-      }
-    } catch (step2Error) {
-      console.error('[TaskQuest] ✗ Step 2 FAILED:', step2Error)
-      // Non-fatal, continue with default name
-    }
-
-    // STEP 3: Update the requester's user document
-    console.log('[TaskQuest] STEP 3: Updating requester user document...')
-    const roleLabel = (roleRequested === 'parent') ? 'parent' : 'child'
-    const displayNameFormatted = `${requesterName} (${roleLabel})`
-    
-    const childUpdates = { 
-      familyCode: familyCode, 
-      displayName: displayNameFormatted 
-    }
-    if (roleRequested === 'parent') {
-      childUpdates.role = 'parent'
-    }
-    
-    console.log('[TaskQuest] Updates to apply:', childUpdates)
-    try {
-      await db.collection('users').doc(requesterId).update(childUpdates)
-      console.log('[TaskQuest] ✓ Step 3 SUCCESS: Requester document updated')
-    } catch (step3Error) {
-      console.error('[TaskQuest] ✗ Step 3 FAILED:', step3Error)
-      console.error('[TaskQuest] Error code:', step3Error.code)
-      console.error('[TaskQuest] Error message:', step3Error.message)
-      throw new Error(`Failed to update user profile: ${step3Error.message}`)
-    }
-
+    console.log('[TaskQuest] ✓ Request marked as approved')
+    console.log('[TaskQuest] Note: Child will be linked when they next log in')
     console.log('[TaskQuest] ===== APPROVAL PROCESS COMPLETED =====')
-    showNotification(`${roleLabel === 'parent' ? 'Guardian' : 'Child'} approved and linked to family!`, 'success')
+    
+    showNotification(`Request approved! ${roleRequested === 'parent' ? 'Guardian' : 'Child'} will be linked when they log in again.`, 'success')
     loadPendingFamilyRequests()
     
     // Refresh children list immediately

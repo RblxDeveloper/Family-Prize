@@ -125,11 +125,18 @@ service cloud.firestore {
       // Parents can approve/decline requests in their family
       allow update: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
       
-      // Only pending requests can be deleted by parent or the requester themselves
-      allow delete: if isSignedIn() && resource.data.status == 'pending' && (
+      // Allow users to delete/update their own approved requests (for auto-linking)
+      // Allow parents to delete requests
+      allow delete: if isSignedIn() && (
         (isParent() && resource.data.familyCode == getUserData().familyCode)
-        || resource.data.childId == request.auth.uid
-        || resource.data.requesterId == request.auth.uid
+        || (resource.data.status == 'approved' && (
+          resource.data.childId == request.auth.uid
+          || resource.data.requesterId == request.auth.uid
+        ))
+        || (resource.data.status == 'pending' && (
+          resource.data.childId == request.auth.uid
+          || resource.data.requesterId == request.auth.uid
+        ))
       );
     }
     

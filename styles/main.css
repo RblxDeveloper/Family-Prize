@@ -628,16 +628,31 @@ body {
   transform: translateY(-2px);
 }
 
-.family-request-card .primary-btn:hover {
-  background: #45a049 !important;
-  transform: scale(1.02);
+/* Request card button styles - black and white theme */
+.approve-request-btn:hover {
+  background: #1a1a1a !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.family-request-card .secondary-btn:hover {
-  background: #f44336 !important;
+.decline-request-btn:hover {
+  background: #000 !important;
   color: white !important;
-  border-color: #f44336 !important;
-  transform: scale(1.02);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.approve-request-btn:active,
+.decline-request-btn:active {
+  transform: translateY(0);
+}
+
+/* Responsive button layout - buttons on right side for larger screens */
+@media (min-width: 769px) {
+  .family-request-card .request-buttons-container {
+    max-width: 400px;
+    margin-left: auto;
+  }
 }
 
 @media (max-width: 768px) {
@@ -652,6 +667,11 @@ body {
   }
   .family-request-card h4 {
     font-size: 14px !important;
+  }
+  .approve-request-btn,
+  .decline-request-btn {
+    font-size: 13px !important;
+    padding: 10px 16px !important;
   }
 }
 
