@@ -259,10 +259,15 @@ async function processApprovedRequest(requestDoc, userId) {
     console.log('[TaskQuest] 🎉 INSTANT LINKING: Approved request detected!', request.approvedFamilyCode)
     
     const userDoc = await db.collection('users').doc(userId).get()
-    if (!userDoc.exists) return
+    if (!userDoc.exists) {
+      console.error('[TaskQuest] User document not found:', userId)
+      return
+    }
     
     const userData = userDoc.data()
     const roleType = request.roleResponded || userData.role || 'child'
+    
+    console.log('[TaskQuest] Updating user profile...', { userId, familyCode: request.approvedFamilyCode, role: roleType })
     
     // Update user profile with family code
     await db.collection('users').doc(userId).update({
@@ -271,18 +276,25 @@ async function processApprovedRequest(requestDoc, userId) {
       role: roleType
     })
     
-    console.log('[TaskQuest] ✓ User successfully linked to family!')
+    console.log('[TaskQuest] ✓ User profile updated successfully!')
+    
+    // Verify the update was successful
+    const verifyDoc = await db.collection('users').doc(userId).get()
+    const verifyData = verifyDoc.data()
+    console.log('[TaskQuest] ✓ Verified familyCode:', verifyData.familyCode)
     
     // Delete the processed request
     await db.collection('familyRequests').doc(requestId).delete()
+    console.log('[TaskQuest] ✓ Request deleted')
     
     // Show success notification
     showNotification('You have been linked to your family! 🎉', 'success')
     
-    // Reload the page to reflect changes
+    // Wait longer before reload to give parent's listener time to detect the change
     setTimeout(() => {
+      console.log('[TaskQuest] Reloading page...')
       window.location.reload()
-    }, 1500)
+    }, 2500)
   } catch (error) {
     console.error('[TaskQuest] Failed to process approved request:', error)
   }
@@ -3027,6 +3039,7 @@ async function loadChildren() {
 
     if (childrenSnapshot.empty) {
       console.log('[TaskQuest] No children found - displaying empty state')
+      window.__cache.childrenKey = 'empty' // Cache empty state
       childrenGrid.innerHTML = `
         <div class="empty-state">
           <p>No children in your family yet.</p>
@@ -3038,10 +3051,12 @@ async function loadChildren() {
 
     // Avoid re-rendering identical content to reduce flash
     if (window.__cache.childrenKey && window.__cache.childrenKey === snapshotKey) {
-      console.log('[TaskQuest] Children cache hit - skipping re-render')
+      console.log('[TaskQuest] Children cache hit - skipping re-render (key: ' + snapshotKey + ')')
       return
     }
     console.log('[TaskQuest] Children cache miss or first load - rendering', childrenSnapshot.docs.length, 'children')
+    console.log('[TaskQuest] Old cache key:', window.__cache.childrenKey)
+    console.log('[TaskQuest] New cache key:', snapshotKey)
     window.__cache.childrenKey = snapshotKey
 
     childrenGrid.innerHTML = ""
@@ -5155,13 +5170,30 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
     showNotification(`${roleRequested === 'parent' ? 'Guardian' : 'Child'} approved! ✓`, 'success')
     loadPendingFamilyRequests()
     
-    // Wait for child to update their profile, then refresh (real-time listener should handle this automatically)
-    // But also do a manual refresh after a delay as backup
+    // Clear cache to force children list refresh
+    if (window.__cache) {
+      delete window.__cache.childrenKey
+      console.log('[TaskQuest] Cache cleared for children')
+    }
+    
+    // Multiple refresh attempts to ensure child appears
     setTimeout(() => {
-      console.log('[TaskQuest] Refreshing family members list (backup refresh)...')
+      console.log('[TaskQuest] First refresh attempt...')
       loadChildren()
       loadCoparents()
-    }, 2000)
+    }, 1000)
+    
+    setTimeout(() => {
+      console.log('[TaskQuest] Second refresh attempt...')
+      loadChildren()
+      loadCoparents()
+    }, 3000)
+    
+    setTimeout(() => {
+      console.log('[TaskQuest] Final refresh attempt...')
+      loadChildren()
+      loadCoparents()
+    }, 5000)
   } catch (error) {
     console.error('[TaskQuest] ===== APPROVAL PROCESS FAILED =====')
     console.error('[TaskQuest] Full error:', error)
