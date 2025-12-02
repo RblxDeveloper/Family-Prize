@@ -2085,6 +2085,18 @@ document.addEventListener("DOMContentLoaded", () => {
         setupOngoingTasksListener()
         initializeSectionVisibility()
         displayFamilyCode()
+        
+        // Restore last viewed section from localStorage
+        try {
+          const lastSection = localStorage.getItem('lastSection')
+          if (lastSection) {
+            setTimeout(() => {
+              navigateToSection(lastSection)
+            }, 100)
+          }
+        } catch (e) {
+          console.debug('[TaskQuest] Failed to restore last section:', e)
+        }
         try {
           // Attach family requests listener for real-time updates
           if (window.familyRequestsUnsubscribe) {
@@ -2157,6 +2169,13 @@ function hideAllSections() {
 
 function navigateToSection(target) {
   hideAllSections()
+
+  // Save current section to localStorage for persistence on refresh
+  try {
+    localStorage.setItem('lastSection', target)
+  } catch (e) {
+    console.debug('[TaskQuest] Failed to save section to localStorage:', e)
+  }
 
   const navLinks = document.querySelectorAll(".nav-link")
   navLinks.forEach((link) => {
@@ -3612,11 +3631,10 @@ async function loadParentActivityHistory() {
       return
     }
 
-    // Get activity log entries for this family
+    // Get activity log entries for this family (no orderBy to avoid composite index)
     const activitySnapshot = await db
       .collection("activityLog")
       .where("familyCode", "==", familyCode)
-      .orderBy("timestamp", "desc")
       .limit(50)
       .get()
 
@@ -3625,12 +3643,22 @@ async function loadParentActivityHistory() {
       return
     }
 
+    // Sort by timestamp client-side (descending)
+    const activities = []
+    activitySnapshot.forEach((doc) => {
+      activities.push({ id: doc.id, ...doc.data() })
+    })
+    activities.sort((a, b) => {
+      const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp?.seconds ? a.timestamp.seconds * 1000 : 0)
+      const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp?.seconds ? b.timestamp.seconds * 1000 : 0)
+      return timeB - timeA
+    })
+
     activityList.innerHTML = ""
     activityList.style.display = 'block'
     activityList.style.width = '100%'
 
-    activitySnapshot.forEach((doc) => {
-      const activity = doc.data()
+    activities.forEach((activity) => {
       const card = document.createElement('div')
       card.style.cssText = `
         border: 1px solid #e0e0e0;
@@ -3711,7 +3739,15 @@ async function loadParentActivityHistory() {
     console.error("[TaskQuest] Load parent activity history error:", error)
     const activityList = document.getElementById("activityList")
     if (activityList) {
-      activityList.innerHTML = "<p>Error loading activity history.</p>"
+      // Check if it's a permission error or index error
+      const errorMsg = error.message || String(error)
+      if (errorMsg.includes('index')) {
+        activityList.innerHTML = "<p style='color: #666;'>Activity history will be available once you perform actions like creating tasks or approving submissions.</p>"
+      } else if (errorMsg.includes('permission')) {
+        activityList.innerHTML = "<p style='color: #666;'>Activity history unavailable. Please update Firestore rules.</p>"
+      } else {
+        activityList.innerHTML = "<p style='color: #666;'>No activity history yet.</p>"
+      }
     }
   }
 }
@@ -4353,7 +4389,9 @@ async function loadCoparents() {
     // Get all parents in the family (excluding self)
     let parentsSnap
     try {
+      console.log('[TaskQuest] loadCoparents - querying for familyCode:', familyCode)
       parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
+      console.log('[TaskQuest] loadCoparents - query returned', parentsSnap.size, 'total parents')
     } catch (error) {
       console.error('[TaskQuest] loadCoparents query error:', error)
       gridEl.innerHTML = '<p style="padding:16px; color:var(--error);">Error loading parents. Check Firestore rules.</p>'
@@ -4362,10 +4400,15 @@ async function loadCoparents() {
     
     const parents = []
     parentsSnap.forEach(doc => {
+      console.log('[TaskQuest] loadCoparents - found parent:', doc.id, doc.data())
       if (doc.id !== user.uid) {
         parents.push({ id: doc.id, ...doc.data() })
+      } else {
+        console.log('[TaskQuest] loadCoparents - skipping self:', doc.id)
       }
     })
+    
+    console.log('[TaskQuest] loadCoparents - final parents list (excluding self):', parents.length)
 
     if (parents.length === 0) {
       gridEl.innerHTML = '<p style="padding:16px; text-align:center; color:var(--text-secondary);">No parents linked yet. Share your invite code to add guardians.</p>'
