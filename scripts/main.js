@@ -84,11 +84,9 @@ function getBasePath() {
   // Join remaining parts and prefix with /
   if (parts.length > 0) {
     const basePath = '/' + parts.join('/')
-    console.log('[TaskQuest] getBasePath() - returning:', basePath)
     return basePath
   }
   
-  console.log('[TaskQuest] getBasePath() - no parts, returning empty string')
   return ''
 }
 
@@ -96,7 +94,6 @@ function getBasePath() {
 function navigateTo(page) {
   const base = getBasePath()
   const url = base + '/' + page
-  console.log('[TaskQuest] navigateTo:', page, '->', url)
   window.location.href = url
 }
 
@@ -3804,9 +3801,11 @@ async function requestParentAccessByCode(code) {
 // Requester-side: watch for approved parent invite requests and self-apply familyCode
 function setupParentInviteOutcomeListener() {
   const user = auth.currentUser
-  console.log('[TaskQuest] setupParentInviteOutcomeListener called for user:', user?.uid)
   if (!user) return () => {}
+  
+  let processedRequestIds = new Set()
   let unsubscribe = null
+  
   try {
     unsubscribe = db
       .collection('parentInviteRequests')
@@ -3814,67 +3813,81 @@ function setupParentInviteOutcomeListener() {
       .where('status', '==', 'approved')
       .onSnapshot(async (snap) => {
         try {
-          console.log('[TaskQuest] parentInvite outcome snapshot, approved docs:', snap.size)
           if (snap.empty) return
           
-          // Use the latest approved request
-          const reqDoc = snap.docs[0]
-          const d = reqDoc.data()
-          console.log('[TaskQuest] Approved request data:', d)
-          
-          // Check if already acknowledged
-          if (d.acknowledgedByRequesterAt) {
-            console.log('[TaskQuest] Already acknowledged this request, skipping')
-            return
-          }
-          
-          // First try: get familyCode directly from the approved request (we now store it there)
-          let familyCode = d.familyCode || null
-          console.log('[TaskQuest] familyCode from request doc:', familyCode)
-          
-          // Fallback 1: try from parentInviteCodes
-          if (!familyCode && d.code) {
-            try {
-              const codeDoc = await db.collection('parentInviteCodes').doc(d.code).get()
-              familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
-              console.log('[TaskQuest] familyCode from parentInviteCodes:', familyCode)
-            } catch(e) { console.debug('[TaskQuest] Failed to read parentInviteCodes:', e) }
-          }
-          // Fallback 2: fetch owner's familyCode
-          if (!familyCode && d.targetOwnerId) {
-            try {
-              const ownerDoc = await db.collection('users').doc(d.targetOwnerId).get()
-              if (ownerDoc.exists) familyCode = ownerDoc.data().familyCode || null
-              console.log('[TaskQuest] familyCode from owner doc:', familyCode)
-            } catch(e) { console.debug('[TaskQuest] Failed to read owner doc:', e) }
-          }
-          if (!familyCode) {
-            console.warn('[TaskQuest] Could not determine familyCode to self-apply')
-            return
-          }
-          console.log('[TaskQuest] Updating my user doc with familyCode:', familyCode)
-          await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
-          showNotification('You have been linked to this family as a parent!', 'success')
-          // Optionally mark request as completed/acknowledged by requester
-          try { await db.collection('parentInviteRequests').doc(reqDoc.id).update({ acknowledgedByRequesterAt: firebase.firestore.FieldValue.serverTimestamp() }) } catch(e) {}
-          // Refresh co-parents and profile if on parent dashboard
-          try {
-            if (window.location.pathname.includes('parent-dashboard')) {
-              loadCoparents(); loadParentProfile();
+          // Process each approved request only once
+          for (const reqDoc of snap.docs) {
+            const d = reqDoc.data()
+            
+            // Skip if already processed in this session or acknowledged
+            if (processedRequestIds.has(reqDoc.id) || d.acknowledgedByRequesterAt) {
+              continue
             }
-          } catch(e) {}
+            
+            // Check if user already has this familyCode
+            const currentUserDoc = await db.collection('users').doc(user.uid).get()
+            const currentFamilyCode = currentUserDoc.exists ? currentUserDoc.data().familyCode : null
+            
+            // Get familyCode from request
+            let familyCode = d.familyCode || null
+            
+            // Fallback to parentInviteCodes
+            if (!familyCode && d.code) {
+              try {
+                const codeDoc = await db.collection('parentInviteCodes').doc(d.code).get()
+                familyCode = codeDoc.exists ? (codeDoc.data().familyCode || null) : null
+              } catch(e) { /* ignore */ }
+            }
+            
+            // Fallback to owner's familyCode
+            if (!familyCode && d.targetOwnerId) {
+              try {
+                const ownerDoc = await db.collection('users').doc(d.targetOwnerId).get()
+                if (ownerDoc.exists) familyCode = ownerDoc.data().familyCode || null
+              } catch(e) { /* ignore */ }
+            }
+            
+            if (!familyCode) continue
+            
+            // Skip if already linked to this family
+            if (currentFamilyCode === familyCode) {
+              // Just mark as acknowledged without notification
+              processedRequestIds.add(reqDoc.id)
+              try { 
+                await db.collection('parentInviteRequests').doc(reqDoc.id).update({ 
+                  acknowledgedByRequesterAt: firebase.firestore.FieldValue.serverTimestamp() 
+                }) 
+              } catch(e) {}
+              continue
+            }
+            
+            // Apply familyCode
+            await db.collection('users').doc(user.uid).update({ familyCode: familyCode, role: 'parent' })
+            processedRequestIds.add(reqDoc.id)
+            showNotification('You have been linked to this family as a parent!', 'success')
+            
+            // Mark as acknowledged
+            try { 
+              await db.collection('parentInviteRequests').doc(reqDoc.id).update({ 
+                acknowledgedByRequesterAt: firebase.firestore.FieldValue.serverTimestamp() 
+              }) 
+            } catch(e) {}
+            
+            // Refresh UI if on parent dashboard
+            if (window.location.pathname.includes('parent-dashboard')) {
+              setTimeout(() => { loadCoparents(); loadParentProfile(); }, 500)
+            }
+          }
         } catch (e) {
-          console.warn('[TaskQuest] setupParentInviteOutcomeListener apply error:', e)
+          console.error('[TaskQuest] Error processing parent invite:', e)
         }
       }, (err) => {
-        if (err && err.code === 'permission-denied') {
-          console.debug('[TaskQuest] parentInvite outcome listener permission denied')
-        } else {
-          console.warn('[TaskQuest] parentInvite outcome listener error:', err)
+        if (err && err.code !== 'permission-denied') {
+          console.error('[TaskQuest] Parent invite listener error:', err)
         }
       })
   } catch (e) {
-    console.warn('[TaskQuest] Could not attach parentInvite outcome listener:', e)
+    console.error('[TaskQuest] Could not attach parent invite listener:', e)
   }
   return () => { try { if (unsubscribe) unsubscribe() } catch(e){} }
 }
