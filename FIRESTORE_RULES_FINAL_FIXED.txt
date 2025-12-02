@@ -69,7 +69,9 @@ service cloud.firestore {
     
     // Task Templates collection
     match /taskTemplates/{taskId} {
-      allow read: if isSignedIn() && isSameFamily(resource.data.familyCode);
+      // Allow family members to read tasks from their family
+      // Also allow any authenticated user to read (for activity history lookups even when not yet linked)
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isParent() && request.resource.data.familyCode == getUserData().familyCode;
       allow update, delete: if isSignedIn() && isParent() && resource.data.familyCode == getUserData().familyCode;
     }

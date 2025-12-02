@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b32 - INSTANT AUTO LINK')
+console.log('[TaskQuest] main.js is loading... version b33 - FORCE INSTANT LINK')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -2236,6 +2236,19 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
           console.warn('[TaskQuest] Failed to attach child realtime listeners:', e)
         }
+        
+        // Set up real-time listener for approved family requests (instant linking)
+        db.collection('users').doc(user.uid).get().then((userDoc) => {
+          if (userDoc.exists) {
+            const userData = userDoc.data()
+            if (!userData.familyCode) {
+              console.log('[TaskQuest] Child not linked to family yet, setting up approval listener...')
+              setupApprovedRequestListener(user.uid, userData.familyCode)
+            }
+          }
+        }).catch((err) => {
+          console.warn('[TaskQuest] Could not check family status for approval listener:', err)
+        })
 
       } else if (currentPage === "parent-dashboard.html") {
         // Restore last viewed section from localStorage BEFORE loading sections to avoid flash
