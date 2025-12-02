@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b20 - INIT FIX')
+console.log('[TaskQuest] main.js is loading... version b21 - ORPHAN CODE REMOVED')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -87,16 +87,7 @@ function getBasePath() {
     const basePath = '/' + parts.join('/')
     return basePath
   }
-            // Only show the toast the very first time on this device
-            if (!alreadyAcknowledged && !clientAck) {
-              showNotification('You have been linked to this family as a parent!', 'success')
-              try { localStorage.setItem('linkedToastShown', 'true') } catch(e) {}
-            }
-            
-            // Persist an acknowledgment flag on the user to suppress toasts afterwards
-            try {
-              await db.collection('users').doc(user.uid).update({ linkedAcknowledged: true })
-            } catch(e) { /* ignore non-critical */ }
+  
   return ''
 }
 
