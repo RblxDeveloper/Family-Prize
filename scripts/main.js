@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b29 - REDESIGNED CARDS')
+console.log('[TaskQuest] main.js is loading... version b30 - DEBUG APPROVAL')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -4970,53 +4970,103 @@ async function loadPendingFamilyRequests() {
 // Approve a family request
 async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequested = 'child') {
   try {
+    console.log('[TaskQuest] ===== APPROVAL PROCESS STARTED =====')
     console.log('[TaskQuest] Parent approving request:', { requestId, requesterId, familyCode, roleRequested })
+    console.log('[TaskQuest] Current user:', auth.currentUser ? auth.currentUser.uid : 'NOT LOGGED IN')
     
-    // 1. Mark the request as approved
-    await db.collection('familyRequests').doc(requestId).update({
-      status: 'approved',
-      roleResponded: roleRequested,
-      approvedBy: auth.currentUser ? auth.currentUser.uid : null,
-      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+    // Get current parent's data to verify permissions
+    const currentParentDoc = await db.collection('users').doc(auth.currentUser.uid).get()
+    const parentData = currentParentDoc.data()
+    console.log('[TaskQuest] Parent data:', { 
+      role: parentData.role, 
+      familyCode: parentData.familyCode,
+      matchesRequestCode: parentData.familyCode === familyCode 
     })
-    console.log('[TaskQuest] Request marked as approved in Firestore')
+    
+    // STEP 1: Try to update the familyRequests document
+    console.log('[TaskQuest] STEP 1: Updating familyRequests document...')
+    try {
+      await db.collection('familyRequests').doc(requestId).update({
+        status: 'approved',
+        roleResponded: roleRequested,
+        approvedBy: auth.currentUser.uid,
+        respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+      })
+      console.log('[TaskQuest] ✓ Step 1 SUCCESS: Request marked as approved')
+    } catch (step1Error) {
+      console.error('[TaskQuest] ✗ Step 1 FAILED:', step1Error)
+      console.error('[TaskQuest] Error code:', step1Error.code)
+      console.error('[TaskQuest] Error message:', step1Error.message)
+      throw new Error(`Failed to update request status: ${step1Error.message}`)
+    }
 
-    // 2. Get the requester's current name
+    // STEP 2: Get the requester's current name
+    console.log('[TaskQuest] STEP 2: Fetching requester data...')
     let requesterName = 'Child'
+    let requesterData = null
     try {
       const requesterDoc = await db.collection('users').doc(requesterId).get()
       if (requesterDoc.exists) {
-        requesterName = requesterDoc.data().name || 'Child'
+        requesterData = requesterDoc.data()
+        requesterName = requesterData.name || 'Child'
+        console.log('[TaskQuest] ✓ Step 2 SUCCESS: Requester data fetched:', { 
+          name: requesterName, 
+          currentFamilyCode: requesterData.familyCode,
+          role: requesterData.role 
+        })
+      } else {
+        console.warn('[TaskQuest] ⚠ Step 2 WARNING: Requester document does not exist')
       }
-    } catch (e) {
-      console.warn('[TaskQuest] Could not fetch requester name:', e)
+    } catch (step2Error) {
+      console.error('[TaskQuest] ✗ Step 2 FAILED:', step2Error)
+      // Non-fatal, continue with default name
     }
 
-    // 3. Directly update the requester's user doc to set familyCode and displayName
-    // This is allowed by rules because parent can update child profiles in same family
+    // STEP 3: Update the requester's user document
+    console.log('[TaskQuest] STEP 3: Updating requester user document...')
     const roleLabel = (roleRequested === 'parent') ? 'parent' : 'child'
     const displayNameFormatted = `${requesterName} (${roleLabel})`
     
-    const childUpdates = { familyCode: familyCode, displayName: displayNameFormatted }
+    const childUpdates = { 
+      familyCode: familyCode, 
+      displayName: displayNameFormatted 
+    }
     if (roleRequested === 'parent') {
       childUpdates.role = 'parent'
     }
     
-    console.log('[TaskQuest] Parent directly updating requester doc:', childUpdates)
-    await db.collection('users').doc(requesterId).update(childUpdates)
-    console.log('[TaskQuest] Requester doc updated by parent')
+    console.log('[TaskQuest] Updates to apply:', childUpdates)
+    try {
+      await db.collection('users').doc(requesterId).update(childUpdates)
+      console.log('[TaskQuest] ✓ Step 3 SUCCESS: Requester document updated')
+    } catch (step3Error) {
+      console.error('[TaskQuest] ✗ Step 3 FAILED:', step3Error)
+      console.error('[TaskQuest] Error code:', step3Error.code)
+      console.error('[TaskQuest] Error message:', step3Error.message)
+      throw new Error(`Failed to update user profile: ${step3Error.message}`)
+    }
 
-    showNotification('Request approved. Child linked to family!', 'success')
+    console.log('[TaskQuest] ===== APPROVAL PROCESS COMPLETED =====')
+    showNotification(`${roleLabel === 'parent' ? 'Guardian' : 'Child'} approved and linked to family!`, 'success')
     loadPendingFamilyRequests()
     
     // Refresh children list immediately
     setTimeout(() => {
-      console.log('[TaskQuest] Parent calling loadChildren() after approval')
+      console.log('[TaskQuest] Refreshing family members list...')
       loadChildren()
+      loadCoparents()
     }, 500)
   } catch (error) {
-    console.error('[TaskQuest] Approve request error:', error)
-    showNotification('Failed to approve request: ' + (error.message || String(error)), 'error')
+    console.error('[TaskQuest] ===== APPROVAL PROCESS FAILED =====')
+    console.error('[TaskQuest] Full error:', error)
+    
+    // Provide more helpful error messages
+    let errorMsg = error.message || String(error)
+    if (errorMsg.includes('Missing or insufficient permissions')) {
+      errorMsg = 'Permission denied. Please update Firestore Security Rules in Firebase Console. See FIRESTORE_RULES_UPDATE_REQUIRED.md for instructions.'
+    }
+    
+    showNotification('Failed to approve request: ' + errorMsg, 'error')
   }
 }
 
