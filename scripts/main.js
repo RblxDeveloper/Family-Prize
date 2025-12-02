@@ -3617,6 +3617,11 @@ async function loadChildProfile() {
     if (totalPointsEl) totalPointsEl.textContent = totalEarned
 
     // Family code linking UI for children - Initial load
+    // Store parent watcher globally so it persists
+    if (!window.childParentWatcher) {
+      window.childParentWatcher = null
+    }
+    
     try {
       const familyCard = document.getElementById("childFamilyLinkCard")
       const linkedInfo = document.getElementById("linkedParentInfo")
@@ -3626,7 +3631,7 @@ async function loadChildProfile() {
         console.log('[TaskQuest] Initial family connection check - familyCode:', userData.familyCode || 'none')
         
         if (userData.familyCode) {
-          // Child is linked — verify parent still exists
+          // Child is linked — verify parent still exists and set up watcher
           console.log('[TaskQuest] Child has familyCode, verifying parent exists...')
           codeInput.style.display = "none"
           linkedInfo.innerHTML = `<strong style="color: #2196F3;">⏳ Verifying family connection...</strong>`
@@ -3646,6 +3651,41 @@ async function loadChildProfile() {
               const parentLabel = p.displayName || p.name || 'Parent'
               console.log('[TaskQuest] ✓ Parent verified:', parentLabel)
               linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${parentLabel}</strong><br><small>Family Code: ${userData.familyCode}</small>`
+              
+              // Set up parent deletion watcher on initial load
+              const parentId = parentSnap.docs[0].id
+              console.log('[TaskQuest] Setting up parent deletion watcher (initial load) for:', parentId)
+              
+              if (window.childParentWatcher) {
+                try { window.childParentWatcher() } catch(e) {}
+              }
+              
+              window.childParentWatcher = db.collection('users').doc(parentId).onSnapshot(
+                (parentDoc) => {
+                  if (!parentDoc.exists) {
+                    // Parent deleted!
+                    console.warn('[TaskQuest] 🚨 Parent document deleted! Unlinking child...')
+                    
+                    db.collection('users').doc(user.uid).update({
+                      familyCode: firebase.firestore.FieldValue.delete()
+                    }).then(() => {
+                      console.log('[TaskQuest] ✓ Child unlinked after parent deletion')
+                      showNotification('Your parent account was deleted. You can now join a new family.', 'info')
+                      
+                      if (codeInput && linkedInfo) {
+                        codeInput.style.display = 'inline-block'
+                        linkedInfo.textContent = 'Not linked to a family yet.'
+                      }
+                    }).catch((err) => {
+                      console.error('[TaskQuest] Failed to unlink:', err)
+                    })
+                  }
+                },
+                (error) => {
+                  console.error('[TaskQuest] Parent watcher error:', error)
+                }
+              )
+              
             } else {
               // Parent account no longer exists - unlink this child
               console.warn('[TaskQuest] ⚠ Parent account not found for familyCode:', userData.familyCode)
@@ -3665,7 +3705,6 @@ async function loadChildProfile() {
                 codeInput.style.display = "inline-block"
                 linkedInfo.textContent = "Not linked to a family yet."
                 
-                // Don't reload automatically - let real-time watcher handle it
               } catch (unlinkErr) {
                 console.error('[TaskQuest] Failed to unlink child:', unlinkErr)
                 linkedInfo.innerHTML = `<strong style="color: #FF6B6B;">⚠ Parent account missing</strong><br><small>Please refresh page</small>`
