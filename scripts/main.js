@@ -3026,6 +3026,7 @@ async function loadChildren() {
     const snapshotKey = childrenSnapshot.docs.map(d => `${d.id}:${(d.data().points||0)}:${(d.data().name||'')}`).join('|')
 
     if (childrenSnapshot.empty) {
+      console.log('[TaskQuest] No children found - displaying empty state')
       childrenGrid.innerHTML = `
         <div class="empty-state">
           <p>No children in your family yet.</p>
@@ -3037,8 +3038,10 @@ async function loadChildren() {
 
     // Avoid re-rendering identical content to reduce flash
     if (window.__cache.childrenKey && window.__cache.childrenKey === snapshotKey) {
+      console.log('[TaskQuest] Children cache hit - skipping re-render')
       return
     }
+    console.log('[TaskQuest] Children cache miss or first load - rendering', childrenSnapshot.docs.length, 'children')
     window.__cache.childrenKey = snapshotKey
 
     childrenGrid.innerHTML = ""
@@ -4946,6 +4949,8 @@ function setupChildrenListener() {
     const familyCode = doc.data().familyCode
     if (!familyCode) return
 
+    console.log('[TaskQuest] Setting up children listener for familyCode:', familyCode)
+
     // Listen for updates to child accounts that match this family code
     unsubscribe = db
       .collection('users')
@@ -4953,7 +4958,12 @@ function setupChildrenListener() {
       .where('role', '==', 'child')
       .onSnapshot(
         (snapshot) => {
-          console.log('[TaskQuest] Children collection update - reloading children list...')
+          console.log('[TaskQuest] 🔥 Children collection update detected!')
+          console.log('[TaskQuest] Number of children:', snapshot.docs.length)
+          snapshot.docs.forEach(doc => {
+            console.log('[TaskQuest]   - Child:', doc.id, doc.data().name || 'Unknown', 'familyCode:', doc.data().familyCode)
+          })
+          console.log('[TaskQuest] Reloading children list...')
           loadChildren()
         },
         (error) => {
@@ -5142,15 +5152,16 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
     console.log('[TaskQuest] ✓ Request marked as approved - user will be auto-linked instantly!')
     console.log('[TaskQuest] ===== APPROVAL PROCESS COMPLETED =====')
     
-    showNotification(`${roleRequested === 'parent' ? 'Guardian' : 'Child'} approved and will be linked automatically! ✓`, 'success')
+    showNotification(`${roleRequested === 'parent' ? 'Guardian' : 'Child'} approved! ✓`, 'success')
     loadPendingFamilyRequests()
     
-    // Refresh children list immediately
+    // Wait for child to update their profile, then refresh (real-time listener should handle this automatically)
+    // But also do a manual refresh after a delay as backup
     setTimeout(() => {
-      console.log('[TaskQuest] Refreshing family members list...')
+      console.log('[TaskQuest] Refreshing family members list (backup refresh)...')
       loadChildren()
       loadCoparents()
-    }, 500)
+    }, 2000)
   } catch (error) {
     console.error('[TaskQuest] ===== APPROVAL PROCESS FAILED =====')
     console.error('[TaskQuest] Full error:', error)
