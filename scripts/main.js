@@ -2221,6 +2221,51 @@ document.addEventListener("DOMContentLoaded", () => {
   let __authInitialized = false
   auth.onAuthStateChanged((user) => {
     if (user) {
+      // Global watchdog: for CHILD accounts, aggressively auto-unlink if parent disappears
+      try {
+        db.collection('users').doc(user.uid).get().then((doc) => {
+          if (!doc.exists) return
+          const data = doc.data() || {}
+          if (data.role === 'child') {
+            // Start periodic check every 5s as a safety net (independent from UI watchers)
+            if (window.__childParentWatchInterval) {
+              try { clearInterval(window.__childParentWatchInterval) } catch(e) {}
+              window.__childParentWatchInterval = null
+            }
+            window.__childParentWatchInterval = setInterval(async () => {
+              try {
+                const snap = await db.collection('users').doc(user.uid).get()
+                if (!snap.exists) return
+                const u = snap.data() || {}
+                const fc = u.familyCode || null
+                if (!fc) return // not linked, nothing to do
+                // Force server check to avoid cache
+                const ps = await db.collection('users')
+                  .where('familyCode', '==', fc)
+                  .where('role', '==', 'parent')
+                  .limit(1)
+                  .get({ source: 'server' })
+                if (ps.empty) {
+                  console.warn('[TaskQuest] Watchdog: parent missing for familyCode', fc, '- unlinking child')
+                  await db.collection('users').doc(user.uid).update({
+                    familyCode: firebase.firestore.FieldValue.delete()
+                  })
+                  // Best-effort UI refresh
+                  try {
+                    const linkedInfo = document.getElementById('linkedParentInfo')
+                    const codeInput = document.getElementById('childFamilyCodeInput')
+                    if (codeInput) codeInput.style.display = 'inline-block'
+                    if (linkedInfo) linkedInfo.textContent = 'Not linked to a family yet.'
+                  } catch(e) {}
+                  showNotification('Your previous parent account was removed. You have been unlinked automatically.', 'info')
+                }
+              } catch (e) {
+                // Silent; network or rules errors should not spam
+              }
+            }, 5000)
+          }
+        }).catch(() => {})
+      } catch (e) {}
       // Attach invite outcome listener globally so requester self-applies familyCode regardless of page
       try {
         if (window.parentInviteOutcomeUnsub) { try { window.parentInviteOutcomeUnsub() } catch(e){}; window.parentInviteOutcomeUnsub = null }
@@ -3475,7 +3520,7 @@ async function loadChildProfile() {
                     .where('familyCode', '==', d.familyCode)
                     .where('role', '==', 'parent')
                     .limit(1)
-                    .get()
+                    .get({ source: 'server' })
                   
                   if (!ps.empty) {
                     // Parent exists - show parent info
