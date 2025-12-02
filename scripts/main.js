@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b26 - DEBUG LOGGING')
+console.log('[TaskQuest] main.js is loading... version b27 - DECLINED FIX + FORCE SERVER')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -948,17 +948,16 @@ async function approveTask(taskId, element) {
 
 async function declineTask(taskId, element) {
   try {
-    await db.collection("submissions").doc(taskId).update({
-      status: "declined",
-      declinedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    })
+    console.log('[TaskQuest] Declining and deleting submission:', taskId)
+    // Delete the submission entirely so the child can restart from scratch
+    await db.collection("submissions").doc(taskId).delete()
 
-    showNotification("Task declined. ❌", "error")
+    showNotification("Task declined. Child can restart the task. ❌", "error")
 
     setTimeout(() => {
       loadPendingApprovals()
       loadOngoingTasks()
-    }, 1000)
+    }, 500)
   } catch (error) {
     console.error("[TaskQuest] Decline task error:", error)
     showNotification("Decline failed: " + error.message, "error")
@@ -2392,17 +2391,6 @@ async function loadAvailableTasks() {
       pendingTaskIds.add(doc.data().taskId)
     })
 
-    // Get declined submissions for this user (so we can reset button to Start)
-    const declinedSnapshot = await db.collection("submissions")
-      .where("userId", "==", user.uid)
-      .where("status", "==", "declined")
-      .get()
-
-    const declinedTaskIds = new Set()
-    declinedSnapshot.forEach((doc) => {
-      declinedTaskIds.add(doc.data().taskId)
-    })
-
     const tasksSnapshot = await db.collection("taskTemplates").where("familyCode", "==", familyCode).get()
 
     // Cache-based short-circuit to avoid flicker when nothing changed
@@ -2411,8 +2399,7 @@ async function loadAvailableTasks() {
       'tasks:', ...tasksSnapshot.docs.map(d => d.id).sort(),
       '|inprog:', ...Array.from(inProgressTaskIds).sort(),
       '|approved:', ...Array.from(approvedTaskIds).sort(),
-      '|pending:', ...Array.from(pendingTaskIds).sort(),
-      '|declined:', ...Array.from(declinedTaskIds).sort()
+      '|pending:', ...Array.from(pendingTaskIds).sort()
     ].join('')
 
     if (tasksSnapshot.empty) {
@@ -2436,7 +2423,6 @@ async function loadAvailableTasks() {
       const taskId = doc.id
       const isInProgress = inProgressTaskIds.has(taskId)
       const isApproved = approvedTaskIds.has(taskId)
-      const isDeclined = declinedTaskIds.has(taskId)
       const inProgressByOther = inProgressByOthers[taskId]
 
       // Skip tasks that this child has already completed and approved or already submitted (pending)
@@ -2448,7 +2434,7 @@ async function loadAvailableTasks() {
       let buttonHtml = ''
       if (inProgressByOther) {
         buttonHtml = `<span class="in-progress-status">⏳ In progress by ${inProgressByOther}</span>`
-      } else if (isInProgress && !isDeclined) {
+      } else if (isInProgress) {
         buttonHtml = `<button class="finish-task-btn" data-task-id="${taskId}" data-task-title="${(task.title || '').replace(/"/g, '&quot;')}" onclick="finishTask(this.dataset.taskId, this.dataset.taskTitle)">⏳ Finish Task</button>`
       } else {
         buttonHtml = `<button class="start-task-btn" data-task-id="${taskId}" data-task-title="${(task.title || '').replace(/"/g, '&quot;')}" onclick="startTask(this.dataset.taskId, this.dataset.taskTitle)">Start Task</button>`
@@ -2554,7 +2540,7 @@ async function loadPendingApprovals() {
       .where("familyCode", "==", familyCode)
       .where("status", "==", "pending")
       .orderBy("submittedAt", "desc")
-      .get()
+      .get({ source: 'server' }) // Force server query to avoid stale cache
 
     // Cache-based early exit
     try { window.__cache = window.__cache || {} } catch(e) {}
@@ -2674,7 +2660,7 @@ async function loadOngoingTasks() {
       .collection("submissions")
       .where("familyCode", "==", familyCode)
       .where("status", "==", "in-progress")
-      .get()
+      .get({ source: 'server' }) // Force server query to avoid stale cache
     
     console.log('[TaskQuest] loadOngoingTasks: found', submissionsSnapshot.size, 'in-progress submissions')
 
@@ -2804,7 +2790,7 @@ function setupOngoingTasksListener() {
 
       ongoingTasksUnsubscribe = db.collection('submissions')
         .where('familyCode', '==', familyCode)
-        .where('status', 'in', ['in-progress', 'pending', 'approved', 'declined'])
+        .where('status', 'in', ['in-progress', 'pending', 'approved'])
         .onSnapshot((snapshot) => {
           console.log('[TaskQuest] Ongoing tasks listener triggered, snapshot size:', snapshot.size)
           loadOngoingTasks().catch(() => {})
