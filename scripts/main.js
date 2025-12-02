@@ -2227,6 +2227,35 @@ document.addEventListener("DOMContentLoaded", () => {
           if (!doc.exists) return
           const data = doc.data() || {}
           if (data.role === 'child') {
+            // Immediate one-shot server check: if parent missing, unlink now
+            (async () => {
+              try {
+                const fc = data.familyCode || null
+                if (fc) {
+                  const ps = await db.collection('users')
+                    .where('familyCode', '==', fc)
+                    .where('role', '==', 'parent')
+                    .limit(1)
+                    .get({ source: 'server' })
+                  if (ps.empty) {
+                    console.warn('[TaskQuest] Immediate check: parent missing for familyCode', fc, '- unlinking child')
+                    await db.collection('users').doc(user.uid).update({
+                      familyCode: firebase.firestore.FieldValue.delete()
+                    })
+                    // UI refresh
+                    try {
+                      const linkedInfo = document.getElementById('linkedParentInfo')
+                      const codeInput = document.getElementById('childFamilyCodeInput')
+                      if (codeInput) codeInput.style.display = 'inline-block'
+                      if (linkedInfo) linkedInfo.textContent = 'Not linked to a family yet.'
+                    } catch(e) {}
+                    showNotification('Your previous parent no longer exists. You have been unlinked automatically.', 'info')
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+            })()
             // Start periodic check every 5s as a safety net (independent from UI watchers)
             if (window.__childParentWatchInterval) {
               try { clearInterval(window.__childParentWatchInterval) } catch(e) {}
@@ -4347,14 +4376,32 @@ async function setFamilyCodeForChild() {
       return
     }
 
-    // Guard: if child is already linked to a family, block sending request
+    // Guard: if child is already linked to a family, first verify parent exists.
+    // If parent is missing, auto-unlink and allow request; else block.
     try {
       const myDoc = await db.collection('users').doc(user.uid).get()
       if (myDoc.exists) {
         const myData = myDoc.data() || {}
         if (myData.familyCode) {
-          showNotification("You are already in a family. Unlink first to send a new request.", "error")
-          return
+          const fc = myData.familyCode
+          // Force server check to confirm parent existence
+          const ps = await db.collection('users')
+            .where('familyCode', '==', fc)
+            .where('role', '==', 'parent')
+            .limit(1)
+            .get({ source: 'server' })
+          if (ps.empty) {
+            // Parent missing — auto-unlink and proceed
+            console.warn('[TaskQuest] Join flow: parent missing for existing familyCode', fc, '- unlinking child')
+            await db.collection('users').doc(user.uid).update({
+              familyCode: firebase.firestore.FieldValue.delete()
+            })
+            showNotification('Your previous parent no longer exists. You have been unlinked automatically and can join a new family.', 'info')
+          } else {
+            // Parent still exists — block sending request
+            showNotification("You are already in a family. Unlink first to send a new request.", "error")
+            return
+          }
         }
       }
     } catch (e) {
