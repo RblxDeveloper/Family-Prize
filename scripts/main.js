@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b23 - NO FLASH FIX')
+console.log('[TaskQuest] main.js is loading... version b24 - REAL-TIME UPDATES')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -2011,6 +2011,7 @@ window.onclick = (event) => {
 // ==========================================
 
 let parentTasksUnsubscribe = null
+let parentSubmissionsUnsubscribe = null
 
 // Set up a realtime listener for parent task templates so parent view stays in sync
 async function setupParentTasksListener() {
@@ -2031,6 +2032,21 @@ async function setupParentTasksListener() {
         loadParentTasks().catch(() => {})
       }, (err) => {
         console.warn('[TaskQuest] parent tasks listener error:', err)
+      })
+      
+    // Also listen to submissions to hide tasks when all children complete them
+    if (parentSubmissionsUnsubscribe) {
+      try { parentSubmissionsUnsubscribe(); } catch(e){}
+      parentSubmissionsUnsubscribe = null
+    }
+    
+    parentSubmissionsUnsubscribe = db.collection('submissions')
+      .where('familyCode', '==', familyCode)
+      .where('status', 'in', ['approved', 'pending'])
+      .onSnapshot(() => {
+        loadParentTasks().catch(() => {})
+      }, (err) => {
+        console.warn('[TaskQuest] parent submissions listener error:', err)
       })
   } catch (error) {
     console.error('[TaskQuest] setupParentTasksListener error:', error)
@@ -4154,16 +4170,16 @@ async function viewParentRequests() {
       // Only show pending requests in the modal
       if (data.status !== 'pending') return
       const createdDate = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleDateString() : 'N/A'
-      listHtml += `<div style="padding:12px; margin-bottom:8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface);">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+      listHtml += `<div style="padding:10px; margin-bottom:8px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface);">
+        <div style="display:flex; flex-direction:column; gap:8px;">
           <div style="flex:1;">
-            <strong style="display:block; margin-bottom:4px;">${escapeHtml(data.requesterName || 'Parent')}</strong>
-            <small style="display:block; color:var(--text-secondary); margin-bottom:4px;">Email: ${escapeHtml(data.requesterEmail || 'N/A')}</small>
-            <small style="display:block; color:var(--text-secondary);">Requested: ${createdDate}</small>
+            <strong style="display:block; margin-bottom:4px; font-size:14px;">${escapeHtml(data.requesterName || 'Parent')}</strong>
+            <small style="display:block; color:var(--text-secondary); margin-bottom:2px; font-size:12px;">Email: ${escapeHtml(data.requesterEmail || 'N/A')}</small>
+            <small style="display:block; color:var(--text-secondary); font-size:11px;">Requested: ${createdDate}</small>
           </div>
-          <div style="display:flex; gap:6px; flex-shrink:0;">
-            <button class='secondary-btn' onclick="approveParentRequest('${doc.id}')" style="font-size:12px; padding:6px 10px;">Approve</button>
-            <button class='secondary-btn' onclick="declineParentRequest('${doc.id}')" style="font-size:12px; padding:6px 10px;">Decline</button>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class='primary-btn' onclick="approveParentRequest('${doc.id}')" style="font-size:12px; padding:6px 12px; flex:1; min-width:80px;">Approve</button>
+            <button class='secondary-btn' onclick="declineParentRequest('${doc.id}')" style="font-size:12px; padding:6px 12px; flex:1; min-width:80px;">Decline</button>
           </div>
         </div>
       </div>`
