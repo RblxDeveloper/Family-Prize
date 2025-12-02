@@ -2193,20 +2193,20 @@ function navigateToSection(target) {
 
     hideAllSections()
 
-  // Save current section to localStorage for persistence on refresh
-  try {
-    localStorage.setItem('lastSection', target)
-  } catch (e) {
-    console.debug('[TaskQuest] Failed to save section to localStorage:', e)
-  }
-
-  const navLinks = document.querySelectorAll(".nav-link")
-  navLinks.forEach((link) => {
-    link.classList.remove("active")
-    if (link.getAttribute("href") === `#${target}`) {
-      link.classList.add("active")
+    // Save current section to localStorage for persistence on refresh
+    try {
+      localStorage.setItem('lastSection', target)
+    } catch (e) {
+      console.debug('[TaskQuest] Failed to save section to localStorage:', e)
     }
-  })
+
+    const navLinks = document.querySelectorAll(".nav-link")
+    navLinks.forEach((link) => {
+      link.classList.remove("active")
+      if (link.getAttribute("href") === `#${target}`) {
+        link.classList.add("active")
+      }
+    })
 
   switch (target) {
     case "tasks":
@@ -2269,7 +2269,7 @@ function navigateToSection(target) {
       } else {
         console.warn('[TaskQuest] navigateToSection: section element not found for', target)
       }
-  }
+    }
   } catch (e) {
     console.error('[TaskQuest] navigateToSection error:', e)
   }
