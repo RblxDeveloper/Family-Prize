@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b31 - AUTO LINK + BLACK THEME')
+console.log('[TaskQuest] main.js is loading... version b32 - INSTANT AUTO LINK')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -198,6 +198,96 @@ function setupParentProfileListener(userId) {
   )
 }
 
+// Set up real-time listener for approved family requests (instant linking)
+let approvedRequestUnsubscribe = null
+function setupApprovedRequestListener(userId, currentFamilyCode) {
+  // Don't set up if user already has a family
+  if (currentFamilyCode) return
+  
+  // Clean up existing listener
+  if (approvedRequestUnsubscribe) {
+    try { approvedRequestUnsubscribe() } catch(e) {}
+    approvedRequestUnsubscribe = null
+  }
+  
+  console.log('[TaskQuest] Setting up real-time listener for approved requests...')
+  
+  // Listen for both childId and requesterId (for parent requests)
+  const childQuery = db.collection('familyRequests')
+    .where('childId', '==', userId)
+    .where('status', '==', 'approved')
+  
+  const parentQuery = db.collection('familyRequests')
+    .where('requesterId', '==', userId)
+    .where('status', '==', 'approved')
+  
+  // Set up listener on childId-based requests
+  approvedRequestUnsubscribe = childQuery.onSnapshot(async (snapshot) => {
+    if (snapshot.empty) {
+      // Also check parent-based requests
+      try {
+        const parentSnapshot = await parentQuery.get()
+        if (!parentSnapshot.empty) {
+          await processApprovedRequest(parentSnapshot.docs[0], userId)
+        }
+      } catch (e) {
+        console.warn('[TaskQuest] Could not check parent requests:', e)
+      }
+      return
+    }
+    
+    // Process the first approved request
+    await processApprovedRequest(snapshot.docs[0], userId)
+  }, (error) => {
+    console.warn('[TaskQuest] Approved request listener error:', error)
+  })
+}
+
+// Process an approved request and link the user
+async function processApprovedRequest(requestDoc, userId) {
+  if (!requestDoc || !requestDoc.exists) return
+  
+  const request = requestDoc.data()
+  const requestId = requestDoc.id
+  
+  if (!request.approvedFamilyCode) {
+    console.warn('[TaskQuest] Approved request missing familyCode')
+    return
+  }
+  
+  try {
+    console.log('[TaskQuest] 🎉 INSTANT LINKING: Approved request detected!', request.approvedFamilyCode)
+    
+    const userDoc = await db.collection('users').doc(userId).get()
+    if (!userDoc.exists) return
+    
+    const userData = userDoc.data()
+    const roleType = request.roleResponded || userData.role || 'child'
+    
+    // Update user profile with family code
+    await db.collection('users').doc(userId).update({
+      familyCode: request.approvedFamilyCode,
+      displayName: `${userData.name || (roleType === 'parent' ? 'Parent' : 'Child')} (${roleType})`,
+      role: roleType
+    })
+    
+    console.log('[TaskQuest] ✓ User successfully linked to family!')
+    
+    // Delete the processed request
+    await db.collection('familyRequests').doc(requestId).delete()
+    
+    // Show success notification
+    showNotification('You have been linked to your family! 🎉', 'success')
+    
+    // Reload the page to reflect changes
+    setTimeout(() => {
+      window.location.reload()
+    }, 1500)
+  } catch (error) {
+    console.error('[TaskQuest] Failed to process approved request:', error)
+  }
+}
+
 // Set up auth state persistence listener
 if (auth) {
   auth.onAuthStateChanged((user) => {
@@ -277,6 +367,9 @@ if (auth) {
           } catch (linkError) {
             console.warn('[TaskQuest] Could not check for approved requests:', linkError)
           }
+          
+          // Set up real-time listener for approved requests (for instant linking)
+          setupApprovedRequestListener(user.uid, data.familyCode)
         }
       }).catch((err) => {
         console.warn('[TaskQuest] Could not verify user status:', err)
@@ -5024,20 +5117,19 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
     console.log('[TaskQuest] ===== APPROVAL PROCESS STARTED =====')
     console.log('[TaskQuest] Request details:', { requestId, requesterId, familyCode, roleRequested })
     
-    // Simply mark the request as approved - the requester will update their own profile when they next log in
+    // Mark the request as approved - the requester will be auto-linked via real-time listener
     await db.collection('familyRequests').doc(requestId).update({
       status: 'approved',
       roleResponded: roleRequested,
       approvedBy: auth.currentUser.uid,
-      approvedFamilyCode: familyCode, // Store the family code for the child to pick up
+      approvedFamilyCode: familyCode, // Store the family code for instant auto-linking
       respondedAt: firebase.firestore.FieldValue.serverTimestamp()
     })
     
-    console.log('[TaskQuest] ✓ Request marked as approved')
-    console.log('[TaskQuest] Note: Child will be linked when they next log in')
+    console.log('[TaskQuest] ✓ Request marked as approved - user will be auto-linked instantly!')
     console.log('[TaskQuest] ===== APPROVAL PROCESS COMPLETED =====')
     
-    showNotification(`Request approved! ${roleRequested === 'parent' ? 'Guardian' : 'Child'} will be linked when they log in again.`, 'success')
+    showNotification(`${roleRequested === 'parent' ? 'Guardian' : 'Child'} approved and will be linked automatically! ✓`, 'success')
     loadPendingFamilyRequests()
     
     // Refresh children list immediately
