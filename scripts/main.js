@@ -128,6 +128,38 @@ let isProcessingRedirect = false
 
 // Real-time listener for parent profile updates (co-parents sync)
 let parentProfileUnsubscribe = null
+let familyMembersUnsubscribe = null
+
+function setupFamilyMembersListener(familyCode) {
+  // Clean up previous listener if exists
+  if (familyMembersUnsubscribe) {
+    try { familyMembersUnsubscribe() } catch (e) {}
+    familyMembersUnsubscribe = null
+  }
+  
+  // Only set up on parent dashboard
+  if (!window.location.pathname.includes('parent-dashboard') || !familyCode) return
+  
+  // Listen for changes to any user in the family
+  familyMembersUnsubscribe = db.collection('users')
+    .where('familyCode', '==', familyCode)
+    .onSnapshot(
+      (snapshot) => {
+        // Reload coparents and children when family members change
+        if (typeof loadCoparents === 'function' && document.getElementById('coparentsGrid')) {
+          loadCoparents()
+        }
+        if (typeof loadChildren === 'function' && document.getElementById('childrenGrid')) {
+          loadChildren()
+        }
+      },
+      (error) => {
+        if (error.code !== 'permission-denied') {
+          console.error('[TaskQuest] Family members listener error:', error)
+        }
+      }
+    )
+}
 
 function setupParentProfileListener(userId) {
   // Clean up previous listener if exists
@@ -143,7 +175,12 @@ function setupParentProfileListener(userId) {
     (doc) => {
       if (!doc.exists) return
       const newData = doc.data()
-      console.log('[TaskQuest] User doc changed, familyCode:', newData.familyCode)
+      
+      // Set up family members listener when familyCode is available
+      const familyCode = newData.familyCode
+      if (familyCode) {
+        setupFamilyMembersListener(familyCode)
+      }
       
       // Reload profile if familyCode changed (means co-parent was approved)
       if (typeof loadParentProfile === 'function' && typeof loadCoparents === 'function') {

@@ -37,14 +37,14 @@ service cloud.firestore {
 
       // Read: allow owners to read their profile; allow any family member to read within the family
       allow get: if isSignedIn() && (request.auth.uid == userId || isSameFamily(resource.data.familyCode));
+      
+      // List: allow parents to list users in their family
       allow list: if isSignedIn() && isParent();
 
       // Update: users can update their own profile; parents can set familyCode on children
       // Allow parent to write familyCode and displayName to unlinked children (for approval flow)
       // Allow parents to update other parents' familyCode (for co-parent approval flow).
-      // Simpler, safer rule: only allow setting `familyCode` on a parent record that
-      // currently has no familyCode, and only if the value being written matches
-      // the approver's familyCode. Also allow users to update their own profile.
+      // Allow overwriting familyCode if the new familyCode matches the approver's familyCode
       allow update: if (
         (isSignedIn() && request.auth.uid == userId)
         ||
@@ -59,7 +59,6 @@ service cloud.firestore {
           isSignedIn()
           && isParent()
           && resource.data.role == 'parent'
-          && (resource.data.familyCode == null)
           && (request.resource.data.familyCode == getUserData().familyCode)
         )
       );
