@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b28 - NOTIFICATIONS + PERMISSIONS FIX')
+console.log('[TaskQuest] main.js is loading... version b29 - REDESIGNED CARDS')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -4927,22 +4927,37 @@ async function loadPendingFamilyRequests() {
       const createdAt = req.createdAt ? (req.createdAt.toDate ? req.createdAt.toDate() : new Date(req.createdAt)) : null
       const timeAgo = createdAt ? getTimeAgo(createdAt) : 'Just now'
       card.innerHTML = `
-        <div class="request-header">
-          <h4 style="margin: 0 0 4px 0; font-size: 16px;">${displayName} <span class="request-badge">${isGuardian ? 'Guardian' : 'Child'}</span></h4>
-          <small style="color: #666; word-break: break-all;">${displayEmail}</small>
-        </div>
-        <div class="request-body" style="margin: 12px 0;">
-          <p style="margin: 4px 0; font-size: 13px;"><strong>ID:</strong> <span style="font-size: 11px; word-break: break-all;">${requesterId}</span></p>
-          <p style="margin: 4px 0; font-size: 13px;"><strong>Family Code:</strong> ${req.familyCode || '—'}</p>
-          <p style="margin: 4px 0; font-size: 13px;"><strong>Submitted:</strong> ${timeAgo}</p>
-        </div>
-        <div class="request-actions" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
-          <button class="primary-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" style="flex:1; min-width:120px; font-size:14px; padding:10px 16px;">
-            ✓ Approve
-          </button>
-          <button class="secondary-btn" onclick="declineFamilyRequest('${requestId}')" style="flex:1; min-width:120px; font-size:14px; padding:10px 16px;">
-            ✗ Decline
-          </button>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                <h4 style="margin: 0; font-size: 16px; font-weight: 600;">${displayName.replace(/ \(.*?\)$/, '')}</h4>
+                <span style="background: ${isGuardian ? '#4CAF50' : '#2196F3'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap;">${isGuardian ? 'Guardian' : 'Child'}</span>
+              </div>
+              <div style="color: #666; font-size: 13px; word-break: break-all; margin-bottom: 4px;">${displayEmail}</div>
+              <div style="color: #999; font-size: 12px;">Submitted ${timeAgo}</div>
+            </div>
+          </div>
+          
+          <div style="background: #f5f5f5; padding: 10px 12px; border-radius: 6px; font-size: 12px;">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: start;">
+              <span style="color: #666; font-weight: 600;">ID:</span>
+              <span style="font-family: monospace; word-break: break-all; color: #333;">${requesterId}</span>
+              <span style="color: #666; font-weight: 600;">Family Code:</span>
+              <span style="font-weight: 600; color: #2196F3;">${req.familyCode || '—'}</span>
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 10px; margin-top: 4px;">
+            <button class="primary-btn" onclick="approveFamilyRequest('${requestId}', '${requesterId}', '${req.familyCode}', '${req.roleRequested || 'child'}')" 
+              style="flex: 1; font-size: 14px; font-weight: 600; padding: 12px 20px; border-radius: 8px; border: none; background: #4CAF50; color: white; cursor: pointer; transition: all 0.2s;">
+              ✓ Approve
+            </button>
+            <button class="secondary-btn" onclick="declineFamilyRequest('${requestId}')" 
+              style="flex: 1; font-size: 14px; font-weight: 600; padding: 12px 20px; border-radius: 8px; border: 2px solid #f44336; background: white; color: #f44336; cursor: pointer; transition: all 0.2s;">
+              ✗ Decline
+            </button>
+          </div>
         </div>
       `
       container.appendChild(card)

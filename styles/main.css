@@ -612,18 +612,47 @@ body {
 
 /* Family Request Card */
 .family-request-card {
-  background: var(--surface);
+  background: white;
   border: 2px solid #ffa500;
   border-left: 5px solid #ffa500;
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  margin-bottom: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
   animation: slideIn 0.3s ease;
-  box-shadow: 0 2px 8px rgba(255, 165, 0, 0.15);
+  box-shadow: 0 2px 12px rgba(255, 165, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.family-request-card:hover {
+  box-shadow: 0 4px 20px rgba(255, 165, 0, 0.25);
+  transform: translateY(-2px);
+}
+
+.family-request-card .primary-btn:hover {
+  background: #45a049 !important;
+  transform: scale(1.02);
+}
+
+.family-request-card .secondary-btn:hover {
+  background: #f44336 !important;
+  color: white !important;
+  border-color: #f44336 !important;
+  transform: scale(1.02);
+}
+
+@media (max-width: 768px) {
+  .family-request-card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .family-request-card {
+    padding: 14px;
+  }
+  .family-request-card h4 {
+    font-size: 14px !important;
+  }
 }
 
 .request-header h4 {
@@ -2585,18 +2614,47 @@ html {
 
 /* Improve family request card styling */
 .family-request-card {
-  background: var(--surface);
+  background: white;
   border: 2px solid #ffa500;
   border-left: 5px solid #ffa500;
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  margin-bottom: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
   animation: slideIn 0.3s ease;
-  box-shadow: 0 2px 8px rgba(255, 165, 0, 0.15);
+  box-shadow: 0 2px 12px rgba(255, 165, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.family-request-card:hover {
+  box-shadow: 0 4px 20px rgba(255, 165, 0, 0.25);
+  transform: translateY(-2px);
+}
+
+.family-request-card .primary-btn:hover {
+  background: #45a049 !important;
+  transform: scale(1.02);
+}
+
+.family-request-card .secondary-btn:hover {
+  background: #f44336 !important;
+  color: white !important;
+  border-color: #f44336 !important;
+  transform: scale(1.02);
+}
+
+@media (max-width: 768px) {
+  .family-request-card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .family-request-card {
+    padding: 14px;
+  }
+  .family-request-card h4 {
+    font-size: 14px !important;
+  }
 }
 
 .request-header h4 {
