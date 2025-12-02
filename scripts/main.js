@@ -3006,12 +3006,23 @@ function setupPendingApprovalsListener() {
 async function loadChildren() {
   try {
     const childrenGrid = document.getElementById("childrenGrid")
-    if (!childrenGrid) return
+    if (!childrenGrid) {
+      console.log('[TaskQuest] childrenGrid element not found')
+      return
+    }
 
     const user = auth.currentUser
+    if (!user) {
+      console.log('[TaskQuest] No authenticated user')
+      return
+    }
+
     const familyCode = await getFamilyCodeForUser(user)
     console.log('[TaskQuest] loadChildren - parent familyCode:', familyCode)
+    console.log('[TaskQuest] loadChildren - parent userId:', user.uid)
+    
     if (!familyCode) {
+      console.log('[TaskQuest] No familyCode found for parent')
       const childrenGrid = document.getElementById("childrenGrid")
       if (childrenGrid) childrenGrid.innerHTML = `
         <div class="empty-state">
@@ -3022,16 +3033,28 @@ async function loadChildren() {
       return
     }
 
+    console.log('[TaskQuest] Querying for children with familyCode:', familyCode)
+    
     const childrenSnapshot = await db
       .collection("users")
       .where("familyCode", "==", familyCode)
       .where("role", "==", "child")
       .get()
 
-    console.log('[TaskQuest] loadChildren - query returned', childrenSnapshot.docs.length, 'children')
+    console.log('[TaskQuest] ===== QUERY RESULTS =====')
+    console.log('[TaskQuest] Query returned', childrenSnapshot.docs.length, 'children')
     childrenSnapshot.docs.forEach(doc => {
-      console.log('[TaskQuest] Child doc:', { id: doc.id, ...doc.data() })
+      const data = doc.data()
+      console.log('[TaskQuest] Child found:', {
+        id: doc.id,
+        name: data.name,
+        email: data.email,
+        familyCode: data.familyCode,
+        role: data.role,
+        points: data.points
+      })
     })
+    console.log('[TaskQuest] ======================')
 
     // Build a lightweight key to detect changes and avoid flicker
     try { window.__cache = window.__cache || {} } catch(e) {}
@@ -5176,21 +5199,47 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
       console.log('[TaskQuest] Cache cleared for children')
     }
     
+    // AGGRESSIVE VERIFICATION: Check if child was actually linked
+    const verifyChildLinked = async () => {
+      console.log('[TaskQuest] ===== VERIFICATION CHECK =====')
+      console.log('[TaskQuest] Checking if child with familyCode', familyCode, 'exists...')
+      try {
+        const allUsersSnapshot = await db.collection('users').where('familyCode', '==', familyCode).get()
+        console.log('[TaskQuest] Total users with familyCode', familyCode + ':', allUsersSnapshot.docs.length)
+        allUsersSnapshot.docs.forEach(doc => {
+          const data = doc.data()
+          console.log('[TaskQuest]   - User:', data.role, '-', data.name, '(', doc.id, ') familyCode:', data.familyCode)
+        })
+        
+        const childrenSnapshot = await db.collection('users')
+          .where('familyCode', '==', familyCode)
+          .where('role', '==', 'child')
+          .get()
+        console.log('[TaskQuest] Children with this familyCode:', childrenSnapshot.docs.length)
+        console.log('[TaskQuest] ========================')
+      } catch (err) {
+        console.error('[TaskQuest] Verification check failed:', err)
+      }
+    }
+    
     // Multiple refresh attempts to ensure child appears
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log('[TaskQuest] First refresh attempt...')
+      await verifyChildLinked()
       loadChildren()
       loadCoparents()
     }, 1000)
     
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log('[TaskQuest] Second refresh attempt...')
+      await verifyChildLinked()
       loadChildren()
       loadCoparents()
     }, 3000)
     
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log('[TaskQuest] Final refresh attempt...')
+      await verifyChildLinked()
       loadChildren()
       loadCoparents()
     }, 5000)
