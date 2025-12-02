@@ -2083,19 +2083,21 @@ document.addEventListener("DOMContentLoaded", () => {
         setupParentTasksListener()
         // Keep ongoing tasks in sync (auto-refresh when status changes)
         setupOngoingTasksListener()
-        initializeSectionVisibility()
         displayFamilyCode()
         
-        // Restore last viewed section from localStorage
+        // Restore last viewed section from localStorage, or show default
         try {
           const lastSection = localStorage.getItem('lastSection')
           if (lastSection) {
-            setTimeout(() => {
-              navigateToSection(lastSection)
-            }, 100)
+            // Restore saved tab without delay
+            navigateToSection(lastSection)
+          } else {
+            // No saved tab, show default (approvals)
+            initializeSectionVisibility()
           }
         } catch (e) {
           console.debug('[TaskQuest] Failed to restore last section:', e)
+          initializeSectionVisibility()
         }
         try {
           // Attach family requests listener for real-time updates
