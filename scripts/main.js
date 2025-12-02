@@ -3451,17 +3451,30 @@ async function loadChildProfile() {
           const codeInput = document.getElementById('childFamilyCodeInput')
           if (familyCard && linkedInfo && codeInput) {
             if (d.familyCode) {
-              // Child is linked — show parent info
+              // Child is linked — verify parent exists
               codeInput.style.display = 'none'
-              // Try to get parent name
+              // Try to get parent name and verify parent exists
               try {
-                const parentSnap = db.collection('users').where('familyCode', '==', d.familyCode).where('role', '==', 'parent').limit(1).get().then((ps) => {
+                db.collection('users').where('familyCode', '==', d.familyCode).where('role', '==', 'parent').limit(1).get().then(async (ps) => {
                   if (!ps.empty) {
+                    // Parent exists
                     const p = ps.docs[0].data()
                     const parentLabel = p.displayName || p.name || 'Parent'
                     linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${parentLabel}</strong><br><small>Family Code: ${d.familyCode}</small>`
                   } else {
-                    linkedInfo.textContent = `Linked to family: ${d.familyCode}`
+                    // Parent missing - unlink child
+                    console.warn('[TaskQuest] Real-time watcher: Parent account missing for familyCode:', d.familyCode)
+                    try {
+                      await db.collection('users').doc(user.uid).update({
+                        familyCode: firebase.firestore.FieldValue.delete()
+                      })
+                      showNotification('Your parent account no longer exists. You can now join a new family.', 'info')
+                      codeInput.style.display = 'inline-block'
+                      linkedInfo.textContent = 'Not linked to a family yet.'
+                    } catch (unlinkErr) {
+                      console.error('[TaskQuest] Failed to unlink:', unlinkErr)
+                      linkedInfo.innerHTML = `<strong style="color: #FF6B6B;">⚠ Parent account missing</strong><br><small>Refresh page to reconnect</small>`
+                    }
                   }
                 })
               } catch (err) {
@@ -3510,10 +3523,10 @@ async function loadChildProfile() {
 
       if (familyCard && linkedInfo && codeInput) {
         if (userData.familyCode) {
-          // Child is linked — show parent info
+          // Child is linked — verify parent still exists
           codeInput.style.display = "none"
           
-          // Get parent name
+          // Get parent name and verify parent exists
           try {
             const parentSnap = await db
               .collection("users")
@@ -3523,13 +3536,40 @@ async function loadChildProfile() {
               .get()
             
             if (!parentSnap.empty) {
+              // Parent exists - show parent info
               const p = parentSnap.docs[0].data()
               const parentLabel = p.displayName || p.name || 'Parent'
               linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${parentLabel}</strong><br><small>Family Code: ${userData.familyCode}</small>`
             } else {
-              linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
+              // Parent account no longer exists - unlink this child
+              console.warn('[TaskQuest] Parent account not found for familyCode:', userData.familyCode)
+              console.log('[TaskQuest] Unlinking child from deleted/missing parent account...')
+              
+              try {
+                await db.collection('users').doc(user.uid).update({
+                  familyCode: firebase.firestore.FieldValue.delete()
+                })
+                
+                console.log('[TaskQuest] ✓ Child unlinked successfully')
+                
+                // Show notification and update UI
+                showNotification('Your parent account no longer exists. You can now join a new family.', 'info')
+                
+                // Update UI to show unlinked state
+                codeInput.style.display = "inline-block"
+                linkedInfo.textContent = "Not linked to a family yet."
+                
+                // Reload after a moment to refresh everything
+                setTimeout(() => {
+                  window.location.reload()
+                }, 2000)
+              } catch (unlinkErr) {
+                console.error('[TaskQuest] Failed to unlink child:', unlinkErr)
+                linkedInfo.innerHTML = `<strong style="color: #FF6B6B;">⚠ Parent account missing</strong><br><small>Please contact support</small>`
+              }
             }
           } catch (err) {
+            console.error('[TaskQuest] Failed to check parent existence:', err)
             linkedInfo.textContent = `Linked to family: ${userData.familyCode}`
           }
         } else {
