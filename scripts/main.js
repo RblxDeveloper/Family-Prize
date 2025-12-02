@@ -409,6 +409,33 @@ function generateFamilyCode() {
   return Math.floor(100000 + Math.random() * 900000).toString()
 }
 
+// Activity logging helper for parent actions
+async function logActivity(actionType, details) {
+  try {
+    const user = auth.currentUser
+    if (!user) return
+    
+    const userDoc = await db.collection('users').doc(user.uid).get()
+    if (!userDoc.exists) return
+    
+    const userData = userDoc.data()
+    const familyCode = userData.familyCode
+    if (!familyCode) return
+    
+    await db.collection('activityLog').add({
+      familyCode: familyCode,
+      parentId: user.uid,
+      parentName: userData.name || userData.email?.split('@')[0] || 'Parent',
+      parentEmail: userData.email || '',
+      actionType: actionType, // 'task_created', 'task_deleted', 'reward_created', 'submission_approved', 'submission_declined', 'child_added', 'parent_added', 'parent_removed', etc.
+      details: details, // Object with relevant details
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    })
+  } catch (error) {
+    console.error('[TaskQuest] Failed to log activity:', error)
+  }
+}
+
 // Try to reliably get or create a familyCode for the current user
 async function getFamilyCodeForUser(user) {
   if (!user) return null
@@ -1025,6 +1052,13 @@ async function createTaskTemplate(event) {
       icon,
       familyCode: familyCode,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    })
+
+    // Log activity
+    await logActivity('task_created', {
+      taskTitle: title,
+      taskDescription: description,
+      points: points
     })
 
     showNotification("Task template created! ✅", "success")
@@ -3098,7 +3132,18 @@ async function deleteTask(taskId) {
   if (!confirm("Are you sure you want to delete this task?")) return
 
   try {
+    const taskDoc = await db.collection("taskTemplates").doc(taskId).get()
+    const taskData = taskDoc.exists ? taskDoc.data() : {}
+    
     await db.collection("taskTemplates").doc(taskId).delete()
+    
+    // Log activity
+    await logActivity('task_deleted', {
+      taskTitle: taskData.title || 'Unknown Task',
+      taskDescription: taskData.description || '',
+      points: taskData.points || 0
+    })
+    
     showNotification("Task deleted successfully", "success")
     setTimeout(() => {
       loadParentTasks()
@@ -3547,6 +3592,128 @@ async function handleFirestoreError(error, uiElement) {
 
   showNotification("Error loading data: " + (error.message || error), "error")
   if (uiElement) uiElement.innerHTML = "<p>Error loading data. Please refresh the page.</p>"
+}
+
+// Load parent activity history - comprehensive log of all family actions
+async function loadParentActivityHistory() {
+  try {
+    const user = auth.currentUser
+    if (!user) return
+
+    const activityList = document.getElementById("activityList")
+    if (!activityList) return
+
+    const userDoc = await db.collection('users').doc(user.uid).get()
+    if (!userDoc.exists) return
+    
+    const familyCode = userDoc.data().familyCode
+    if (!familyCode) {
+      activityList.innerHTML = "<p>No family code set.</p>"
+      return
+    }
+
+    // Get activity log entries for this family
+    const activitySnapshot = await db
+      .collection("activityLog")
+      .where("familyCode", "==", familyCode)
+      .orderBy("timestamp", "desc")
+      .limit(50)
+      .get()
+
+    if (activitySnapshot.empty) {
+      activityList.innerHTML = "<p>No activity yet. Actions like creating tasks, approving submissions, adding children will appear here.</p>"
+      return
+    }
+
+    activityList.innerHTML = ""
+    activityList.style.display = 'block'
+    activityList.style.width = '100%'
+
+    activitySnapshot.forEach((doc) => {
+      const activity = doc.data()
+      const card = document.createElement('div')
+      card.style.cssText = `
+        border: 1px solid #e0e0e0;
+        padding: 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        background: white;
+      `
+
+      const time = activity.timestamp?.toDate ? activity.timestamp.toDate().toLocaleString() : 'Unknown time'
+      const parentName = activity.parentName || 'Unknown Parent'
+      const actionType = activity.actionType || 'unknown'
+      const details = activity.details || {}
+
+      let actionText = ''
+      let actionIcon = ''
+      
+      switch (actionType) {
+        case 'task_created':
+          actionIcon = '➕'
+          actionText = `Created task: <strong>${escapeHtml(details.taskTitle || 'Unknown')}</strong> (${details.points || 0} points)`
+          break
+        case 'task_deleted':
+          actionIcon = '🗑️'
+          actionText = `Deleted task: <strong>${escapeHtml(details.taskTitle || 'Unknown')}</strong>`
+          break
+        case 'reward_created':
+          actionIcon = '🎁'
+          actionText = `Created reward: <strong>${escapeHtml(details.rewardName || 'Unknown')}</strong> (${details.cost || 0} points)`
+          break
+        case 'reward_deleted':
+          actionIcon = '🗑️'
+          actionText = `Deleted reward: <strong>${escapeHtml(details.rewardName || 'Unknown')}</strong>`
+          break
+        case 'submission_approved':
+          actionIcon = '✅'
+          actionText = `Approved submission from <strong>${escapeHtml(details.childName || 'child')}</strong> for task: <strong>${escapeHtml(details.taskTitle || 'Unknown')}</strong> (+${details.points || 0} points)`
+          break
+        case 'submission_declined':
+          actionIcon = '❌'
+          actionText = `Declined submission from <strong>${escapeHtml(details.childName || 'child')}</strong> for task: <strong>${escapeHtml(details.taskTitle || 'Unknown')}</strong>`
+          break
+        case 'child_added':
+          actionIcon = '👶'
+          actionText = `Added child: <strong>${escapeHtml(details.childName || 'Unknown')}</strong>`
+          break
+        case 'child_removed':
+          actionIcon = '👋'
+          actionText = `Removed child: <strong>${escapeHtml(details.childName || 'Unknown')}</strong>`
+          break
+        case 'parent_added':
+          actionIcon = '👨‍👩‍👧'
+          actionText = `Added parent: <strong>${escapeHtml(details.parentName || 'Unknown')}</strong> to family`
+          break
+        case 'parent_removed':
+          actionIcon = '🚫'
+          actionText = `Removed parent: <strong>${escapeHtml(details.parentName || 'Unknown')}</strong> from family`
+          break
+        default:
+          actionIcon = '📝'
+          actionText = `${actionType}: ${JSON.stringify(details)}`
+      }
+
+      card.innerHTML = `
+        <div style="display: flex; align-items: start; gap: 12px;">
+          <div style="font-size: 24px; flex-shrink: 0;">${actionIcon}</div>
+          <div style="flex: 1;">
+            <div style="font-size: 14px; margin-bottom: 4px;">${actionText}</div>
+            <div style="font-size: 12px; color: #666;">
+              By: <strong>${escapeHtml(parentName)}</strong> | ${time}
+            </div>
+          </div>
+        </div>
+      `
+      activityList.appendChild(card)
+    })
+  } catch (error) {
+    console.error("[TaskQuest] Load parent activity history error:", error)
+    const activityList = document.getElementById("activityList")
+    if (activityList) {
+      activityList.innerHTML = "<p>Error loading activity history.</p>"
+    }
+  }
 }
 
 async function displayFamilyCode() {
@@ -4031,6 +4198,16 @@ async function approveParentRequest(requestId) {
       }
     }
 
+    // Log activity
+    try {
+      const requesterDoc = await db.collection('users').doc(requesterId).get()
+      const requesterName = requesterDoc.exists ? (requesterDoc.data().name || requesterDoc.data().email?.split('@')[0] || 'Parent') : 'Parent'
+      await logActivity('parent_added', {
+        parentName: requesterName,
+        parentId: requesterId
+      })
+    } catch(e) { /* ignore */ }
+
     showNotification(directUpdateSuccess ? 'Parent request approved and linked to family!' : 'Parent request approved — they will be linked when they refresh.', 'success')
 
     // Reload profile to reflect updated co-parents count
@@ -4116,25 +4293,10 @@ async function loadParentProfile() {
     if (childrenEl) childrenEl.textContent = String(childrenCount)
     if (parentsEl) parentsEl.textContent = String(parentsCount)
 
-    // Recent activity - inbox/outbox of parent invite requests
-    const activityEl = document.getElementById('parentActivityList')
-    if (!activityEl) return
-    activityEl.innerHTML = '<p>Loading recent activity...</p>'
-    // Avoid composite index requirement by removing orderBy and sorting client-side
-    const inbox = await db.collection('parentInviteRequests').where('targetOwnerId', '==', user.uid).limit(12).get()
-    const outbox = await db.collection('parentInviteRequests').where('requesterId', '==', user.uid).limit(12).get()
-    let html = ''
-    function byDateDesc(a,b){
-      const ta = a?.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a?.createdAt?.seconds ? a.createdAt.seconds*1000 : 0)
-      const tb = b?.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b?.createdAt?.seconds ? b.createdAt.seconds*1000 : 0)
-      return tb - ta
+    // Load comprehensive parent activity history
+    if (typeof loadParentActivityHistory === 'function') {
+      loadParentActivityHistory()
     }
-    const inboxItems = inbox.docs.map(x => x.data()).sort(byDateDesc).slice(0,6)
-    const outboxItems = outbox.docs.map(x => x.data()).sort(byDateDesc).slice(0,6)
-    inboxItems.forEach(d => { html += `<div class="activity-item">Request from <strong>${escapeHtml(d.requesterName||'Parent')}</strong> — <em>${escapeHtml(d.status)}</em></div>` })
-    outboxItems.forEach(d => { html += `<div class="activity-item">Requested access to <strong>code ${escapeHtml(d.code||'')}</strong> — <em>${escapeHtml(d.status)}</em></div>` })
-    if (!html) html = '<p>No recent activity.</p>'
-    activityEl.innerHTML = html
   } catch (error) {
     console.error('[TaskQuest] loadParentProfile error:', error)
   }
@@ -4144,15 +4306,20 @@ async function loadParentProfile() {
 async function loadCoparents() {
   try {
     const user = auth.currentUser
-    console.log('[TaskQuest] loadCoparents() called, user:', user?.uid)
-    if (!user) { showNotification('Please sign in.', 'error'); return }
+    if (!user) return
+    
+    const gridEl = document.getElementById('coparentsGrid')
+    if (!gridEl) return
     
     const userDoc = await db.collection('users').doc(user.uid).get()
-    if (!userDoc.exists) { console.warn('[TaskQuest] loadCoparents: user doc not found'); return }
+    if (!userDoc.exists) {
+      console.warn('[TaskQuest] loadCoparents: user doc not found')
+      return
+    }
+    
     const familyCode = userDoc.data().familyCode
-    console.log('[TaskQuest] loadCoparents: my familyCode =', familyCode)
     if (!familyCode) { 
-      document.getElementById('coparentsGrid').innerHTML = '<p>No family code set.</p>'
+      gridEl.innerHTML = '<p>No family code set.</p>'
       return 
     }
 
@@ -4184,16 +4351,21 @@ async function loadCoparents() {
     }
 
     // Get all parents in the family (excluding self)
-    const parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
+    let parentsSnap
+    try {
+      parentsSnap = await db.collection('users').where('familyCode', '==', familyCode).where('role', '==', 'parent').get()
+    } catch (error) {
+      console.error('[TaskQuest] loadCoparents query error:', error)
+      gridEl.innerHTML = '<p style="padding:16px; color:var(--error);">Error loading parents. Check Firestore rules.</p>'
+      return
+    }
+    
     const parents = []
     parentsSnap.forEach(doc => {
       if (doc.id !== user.uid) {
         parents.push({ id: doc.id, ...doc.data() })
       }
     })
-
-    const gridEl = document.getElementById('coparentsGrid')
-    if (!gridEl) return
 
     if (parents.length === 0) {
       gridEl.innerHTML = '<p style="padding:16px; text-align:center; color:var(--text-secondary);">No parents linked yet. Share your invite code to add guardians.</p>'
@@ -4263,8 +4435,19 @@ async function removeCoparent(parentId) {
     const familyCode = ownerDoc.exists ? (ownerDoc.data().familyCode || null) : null
     if (!familyCode) { showNotification('Your account has no family code.', 'error'); return }
 
+    // Get parent info for logging
+    const parentDoc = await db.collection('users').doc(parentId).get()
+    const parentName = parentDoc.exists ? (parentDoc.data().name || parentDoc.data().email?.split('@')[0] || 'Parent') : 'Parent'
+
     // Attempt the update
     await db.collection('users').doc(parentId).update({ familyCode: null, removedBy: owner.uid, removedAt: firebase.firestore.FieldValue.serverTimestamp() })
+    
+    // Log activity
+    await logActivity('parent_removed', {
+      parentName: parentName,
+      parentId: parentId
+    })
+    
     showNotification('Parent removed from family.', 'success')
     setTimeout(() => { loadCoparents(); loadParentProfile() }, 300)
   } catch (error) {

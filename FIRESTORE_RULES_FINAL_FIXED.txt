@@ -159,5 +159,17 @@ service cloud.firestore {
       // Allow deletion only by target owner if status is pending
       allow delete: if isSignedIn() && resource.data.targetOwnerId == request.auth.uid && resource.data.status == 'pending';
     }
+    
+    // Activity Log collection - for parent dashboard activity history
+    match /activityLog/{activityId} {
+      // Parents can create activity logs for their family
+      allow create: if isSignedIn() && isParent() && request.resource.data.familyCode == getUserData().familyCode;
+      
+      // Parents can read activity logs for their family
+      allow read: if isSignedIn() && isParent() && isSameFamily(resource.data.familyCode);
+      
+      // No updates or deletes allowed
+      allow update, delete: if false;
+    }
   }
 }
