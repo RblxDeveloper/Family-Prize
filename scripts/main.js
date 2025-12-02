@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b19 - DATA ATTRIBUTE FIX')
+console.log('[TaskQuest] main.js is loading... version b20 - INIT FIX')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -38,8 +38,6 @@ if (typeof firebase !== "undefined" && firebase) {
     auth = firebase.auth()
     
     // Enable persistent login: user stays logged in across browser sessions
-            const alreadyAcknowledged = Boolean(currentData.linkedAcknowledged)
-            const clientAck = Boolean(localStorage.getItem('linkedToastShown'))
     // Using LOCAL persistence means login persists even after browser close
     firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
       .catch((error) => {
