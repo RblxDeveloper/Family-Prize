@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b17 - FIXED')
+console.log('[TaskQuest] main.js is loading... version b18 - PARENTHESIS FIX')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -2458,9 +2458,11 @@ async function loadAvailableTasks() {
       if (inProgressByOther) {
         buttonHtml = `<span class="in-progress-status">⏳ In progress by ${inProgressByOther}</span>`
       } else if (isInProgress && !isDeclined) {
-        buttonHtml = `<button class="finish-task-btn" onclick="finishTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')">⏳ Finish Task</button>`
+        const escapedTitle = task.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+        buttonHtml = `<button class="finish-task-btn" onclick="finishTask('${taskId}', '${escapedTitle}')">⏳ Finish Task</button>`
       } else {
-        buttonHtml = `<button class="start-task-btn" onclick="startTask('${taskId}', '${task.title.replace(/'/g, "\\'")}')">Start Task</button>`
+        const escapedTitle = task.title.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+        buttonHtml = `<button class="start-task-btn" onclick="startTask('${taskId}', '${escapedTitle}')">Start Task</button>`
       }
 
       taskCard.innerHTML = `
@@ -2936,7 +2938,7 @@ async function loadChildren() {
             <button class="primary-btn" onclick="addBonusPoints('${doc.id}')">Add Bonus</button>
             <button class="secondary-btn" onclick="unlinkChild('${doc.id}')">Unlink</button>
             <button class="secondary-btn" onclick="deactivateChild('${doc.id}')">Deactivate</button>
-            <button class="secondary-btn" onclick="editChildNamePrompt('${doc.id}', '${child.name.replace(/'/g, "\\'")}')">Edit Name</button>
+            <button class="secondary-btn" onclick="editChildNamePrompt('${doc.id}', '${child.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}')">Edit Name</button>
           </div>
       `
       childrenGrid.appendChild(childCard)
