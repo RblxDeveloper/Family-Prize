@@ -2184,7 +2184,14 @@ function hideAllSections() {
 }
 
 function navigateToSection(target) {
-  hideAllSections()
+  try {
+    const allowed = ['tasks','rewards','profile','coparents','approvals','manage','settings']
+    if (!allowed.includes(target)) {
+      console.warn('[TaskQuest] navigateToSection: invalid target', target)
+      target = 'approvals'
+    }
+
+    hideAllSections()
 
   // Save current section to localStorage for persistence on refresh
   try {
@@ -2257,7 +2264,14 @@ function navigateToSection(target) {
       break
     default:
       const section = document.getElementById(`${target}-section`)
-      if (section) section.style.display = "block"
+      if (section) {
+        section.style.display = "block"
+      } else {
+        console.warn('[TaskQuest] navigateToSection: section element not found for', target)
+      }
+  }
+  } catch (e) {
+    console.error('[TaskQuest] navigateToSection error:', e)
   }
 }
 
