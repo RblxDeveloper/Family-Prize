@@ -3437,6 +3437,10 @@ async function loadChildProfile() {
         try { childProfileUnsubscribe(); } catch(e){}
         childProfileUnsubscribe = null
       }
+      
+      // Store parent watcher unsubscribe function
+      let parentWatcherUnsubscribe = null
+      
       childProfileUnsubscribe = db.collection('users').doc(user.uid).onSnapshot((snap) => {
         if (!snap.exists) return
         const d = snap.data()
@@ -3464,47 +3468,120 @@ async function loadChildProfile() {
               // Child is linked — verify parent exists and show info
               codeInput.style.display = 'none'
               
-              // Get parent name and verify parent exists
-              db.collection('users')
-                .where('familyCode', '==', d.familyCode)
-                .where('role', '==', 'parent')
-                .limit(1)
-                .get()
-                .then(async (ps) => {
+              // Function to check and unlink if parent is missing
+              const checkAndUnlinkIfParentMissing = async () => {
+                try {
+                  const ps = await db.collection('users')
+                    .where('familyCode', '==', d.familyCode)
+                    .where('role', '==', 'parent')
+                    .limit(1)
+                    .get()
+                  
                   if (!ps.empty) {
                     // Parent exists - show parent info
                     const p = ps.docs[0].data()
                     const parentLabel = p.displayName || p.name || 'Parent'
                     console.log('[TaskQuest] ✓ Parent found:', parentLabel)
                     linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to ${parentLabel}</strong><br><small>Family Code: ${d.familyCode}</small>`
+                    
+                    // Set up watcher on the parent document to detect deletion
+                    if (parentWatcherUnsubscribe) {
+                      try { parentWatcherUnsubscribe() } catch(e) {}
+                    }
+                    
+                    const parentId = ps.docs[0].id
+                    console.log('[TaskQuest] Setting up parent deletion watcher for:', parentId)
+                    
+                    parentWatcherUnsubscribe = db.collection('users').doc(parentId).onSnapshot(
+                      (parentSnap) => {
+                        if (!parentSnap.exists) {
+                          // Parent document was deleted!
+                          console.warn('[TaskQuest] 🚨 Parent document deleted! Auto-unlinking child...')
+                          
+                          db.collection('users').doc(user.uid).update({
+                            familyCode: firebase.firestore.FieldValue.delete()
+                          }).then(() => {
+                            console.log('[TaskQuest] ✓ Child auto-unlinked after parent deletion')
+                            showNotification('Your parent account was deleted. You can now join a new family.', 'info')
+                            
+                            // Update UI
+                            if (codeInput && linkedInfo) {
+                              codeInput.style.display = 'inline-block'
+                              linkedInfo.textContent = 'Not linked to a family yet.'
+                            }
+                          }).catch((err) => {
+                            console.error('[TaskQuest] Failed to unlink after parent deletion:', err)
+                          })
+                        } else {
+                          // Parent still exists, check if they changed familyCode
+                          const parentData = parentSnap.data()
+                          if (parentData.familyCode !== d.familyCode) {
+                            console.warn('[TaskQuest] ⚠ Parent changed familyCode! Auto-unlinking child...')
+                            
+                            db.collection('users').doc(user.uid).update({
+                              familyCode: firebase.firestore.FieldValue.delete()
+                            }).then(() => {
+                              console.log('[TaskQuest] ✓ Child auto-unlinked after parent familyCode change')
+                              showNotification('Your parent changed their family. You can now join a new family.', 'info')
+                              
+                              if (codeInput && linkedInfo) {
+                                codeInput.style.display = 'inline-block'
+                                linkedInfo.textContent = 'Not linked to a family yet.'
+                              }
+                            }).catch((err) => {
+                              console.error('[TaskQuest] Failed to unlink after parent familyCode change:', err)
+                            })
+                          }
+                        }
+                      },
+                      (error) => {
+                        console.error('[TaskQuest] Parent watcher error:', error)
+                      }
+                    )
                   } else {
                     // Parent missing - unlink child automatically
                     console.warn('[TaskQuest] ⚠ Parent account missing for familyCode:', d.familyCode)
                     console.log('[TaskQuest] Auto-unlinking child...')
                     
-                    try {
-                      await db.collection('users').doc(user.uid).update({
-                        familyCode: firebase.firestore.FieldValue.delete()
-                      })
-                      
-                      console.log('[TaskQuest] ✓ Child auto-unlinked successfully')
-                      showNotification('Your parent account no longer exists. You can now join a new family.', 'info')
-                      
-                      // Update UI immediately
-                      codeInput.style.display = 'inline-block'
-                      linkedInfo.textContent = 'Not linked to a family yet.'
-                    } catch (unlinkErr) {
-                      console.error('[TaskQuest] Failed to auto-unlink:', unlinkErr)
-                      linkedInfo.innerHTML = `<strong style="color: #FF6B6B;">⚠ Parent account missing</strong><br><small>Refresh page to reconnect</small>`
-                    }
+                    await db.collection('users').doc(user.uid).update({
+                      familyCode: firebase.firestore.FieldValue.delete()
+                    })
+                    
+                    console.log('[TaskQuest] ✓ Child auto-unlinked successfully')
+                    showNotification('Your parent account no longer exists. You can now join a new family.', 'info')
+                    
+                    // Update UI immediately
+                    codeInput.style.display = 'inline-block'
+                    linkedInfo.textContent = 'Not linked to a family yet.'
                   }
-                })
-                .catch((err) => {
+                } catch (err) {
                   console.error('[TaskQuest] Failed to check parent:', err)
                   linkedInfo.innerHTML = `<strong style="color: #4CAF50;">✓ Linked to family</strong><br><small>Family Code: ${d.familyCode}</small>`
-                })
+                }
+              }
+              
+              // Initial check
+              checkAndUnlinkIfParentMissing()
+              
+              // Also check periodically every 10 seconds as backup
+              if (window.parentCheckInterval) {
+                clearInterval(window.parentCheckInterval)
+              }
+              window.parentCheckInterval = setInterval(checkAndUnlinkIfParentMissing, 10000)
+              
             } else {
               console.log('[TaskQuest] Child is NOT linked to any family')
+              
+              // Clean up parent watcher if exists
+              if (parentWatcherUnsubscribe) {
+                try { parentWatcherUnsubscribe() } catch(e) {}
+                parentWatcherUnsubscribe = null
+              }
+              if (window.parentCheckInterval) {
+                clearInterval(window.parentCheckInterval)
+                window.parentCheckInterval = null
+              }
+              
               // Not linked (or was unlinked) - show input to join family
               codeInput.style.display = 'inline-block'
               linkedInfo.textContent = 'Not linked to a family yet.'
