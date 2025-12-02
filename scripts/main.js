@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b21 - ORPHAN CODE REMOVED')
+console.log('[TaskQuest] main.js is loading... version b22 - TAB PERSISTENCE FIXED')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -2076,33 +2076,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
       } else if (currentPage === "parent-dashboard.html") {
         // Restore last viewed section from localStorage BEFORE loading sections to avoid flash
-        try {
-          hideAllSections()
-          const lastSection = localStorage.getItem('lastSection')
-          if (lastSection) {
-            navigateToSection(lastSection)
-          } else {
-            const approvalsSection = document.getElementById("approvals-section")
-            if (approvalsSection) approvalsSection.style.display = "block"
-          }
-        } catch (e) {
-          console.debug('[TaskQuest] Failed to restore last section:', e)
-          hideAllSections()
-          const approvalsSection = document.getElementById("approvals-section")
-          if (approvalsSection) approvalsSection.style.display = "block"
-        }
-
-        // Now load data and attach listeners without changing section visibility
-        loadPendingApprovals()
-        loadOngoingTasks()
-        loadChildren()
-        loadParentTasks()
-        loadParentRewards()
-        // Keep parent tasks view in sync in real-time
+        hideAllSections()
+        const lastSection = localStorage.getItem('lastSection') || 'approvals'
+        
+        // Navigate to the saved section (or approvals if none saved)
+        // This will show the correct section and load its data
+        navigateToSection(lastSection)
+        
+        // Set up real-time listeners that work across all sections
         setupParentTasksListener()
-        // Keep ongoing tasks in sync (auto-refresh when status changes)
         setupOngoingTasksListener()
-        displayFamilyCode()
         try {
           // Attach family requests listener for real-time updates
           if (window.familyRequestsUnsubscribe) {
