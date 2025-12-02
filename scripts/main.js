@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b25 - FULL REAL-TIME')
+console.log('[TaskQuest] main.js is loading... version b26 - DEBUG LOGGING')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
@@ -843,12 +843,13 @@ async function submitTaskForReview() {
     if (currentTaskInfo.inProgressSubmissionId) {
       // Update the existing in-progress submission with photos and ensure taskId/taskTitle are set
       try {
+        console.log('[TaskQuest] Updating submission', currentTaskInfo.inProgressSubmissionId, 'from in-progress to pending')
         await db.collection("submissions").doc(currentTaskInfo.inProgressSubmissionId).update({
           ...submissionData,
           taskId: currentTaskInfo.id,
           taskTitle: currentTaskInfo.title,
         })
-        console.log('[TaskQuest] Updated in-progress submission with photos and confirmed taskId:', currentTaskInfo.id)
+        console.log('[TaskQuest] Successfully updated submission to pending status')
       } catch (updateErr) {
         console.warn('[TaskQuest] Update existing submission failed, attempting fresh create:', updateErr)
         // If update fails (e.g. doc deleted), create a new submission
@@ -2043,7 +2044,8 @@ async function setupParentTasksListener() {
     parentSubmissionsUnsubscribe = db.collection('submissions')
       .where('familyCode', '==', familyCode)
       .where('status', 'in', ['approved', 'pending'])
-      .onSnapshot(() => {
+      .onSnapshot((snapshot) => {
+        console.log('[TaskQuest] Parent submissions listener triggered, snapshot size:', snapshot.size)
         loadParentTasks().catch(() => {})
       }, (err) => {
         console.warn('[TaskQuest] parent submissions listener error:', err)
@@ -2653,13 +2655,18 @@ let ongoingTasksUnsubscribe = null
 
 async function loadOngoingTasks() {
   try {
+    console.log('[TaskQuest] loadOngoingTasks called')
     const grid = document.getElementById("ongoingTasksGrid")
-    if (!grid) return
+    if (!grid) {
+      console.log('[TaskQuest] loadOngoingTasks: grid not found')
+      return
+    }
 
     const user = auth.currentUser
     const familyCode = await getFamilyCodeForUser(user)
     if (!familyCode) {
       if (grid) grid.innerHTML = "<p>No on-going tasks at the moment.</p>"
+      console.log('[TaskQuest] loadOngoingTasks: no familyCode')
       return
     }
 
@@ -2668,6 +2675,8 @@ async function loadOngoingTasks() {
       .where("familyCode", "==", familyCode)
       .where("status", "==", "in-progress")
       .get()
+    
+    console.log('[TaskQuest] loadOngoingTasks: found', submissionsSnapshot.size, 'in-progress submissions')
 
     // Build cache key and avoid redundant renders
     try { window.__cache = window.__cache || {} } catch(e) {}
@@ -2677,7 +2686,9 @@ async function loadOngoingTasks() {
     }).sort().join('|')
 
     if (submissionsSnapshot.empty) {
+      console.log('[TaskQuest] loadOngoingTasks: snapshot empty, showing message')
       grid.innerHTML = "<p>No on-going tasks at the moment. 😴</p>"
+      window.__cache.ongoingKey = "" // Clear cache
       return
     }
 
@@ -2794,7 +2805,8 @@ function setupOngoingTasksListener() {
       ongoingTasksUnsubscribe = db.collection('submissions')
         .where('familyCode', '==', familyCode)
         .where('status', 'in', ['in-progress', 'pending', 'approved', 'declined'])
-        .onSnapshot(() => {
+        .onSnapshot((snapshot) => {
+          console.log('[TaskQuest] Ongoing tasks listener triggered, snapshot size:', snapshot.size)
           loadOngoingTasks().catch(() => {})
         }, (err) => {
           console.warn('[TaskQuest] ongoing tasks listener error:', err)
@@ -3170,12 +3182,14 @@ async function loadParentTasks() {
         const users = new Set()
         approvedSnap.forEach((s) => { if (s.data().userId) users.add(s.data().userId) })
         approvedByCount = users.size
+        console.log('[TaskQuest] Task', task.title, '- childrenCount:', childrenCount, ', approvedByCount:', approvedByCount)
       } catch (e) {
         console.warn('[TaskQuest] Failed to check approved submissions for task:', e)
       }
 
       if (childrenCount > 0 && approvedByCount >= childrenCount) {
         // All children completed this task — skip showing it to parent
+        console.log('[TaskQuest] Hiding task', task.title, 'because all children completed it')
         continue
       }
 
