@@ -1,7 +1,7 @@
 // ==========================================
 // CLOUDINARY CONFIGURATION (unsigned uploads)
 // ==========================================
-console.log('[TaskQuest] main.js is loading... version b16')
+console.log('[TaskQuest] main.js is loading... version b17 - FIXED')
 const CLOUDINARY_CLOUD_NAME = 'dxt3u0ezq'; // Replace with your Cloudinary cloud name
 const CLOUDINARY_UPLOAD_PRESET = 'TaskQuest'; // Your unsigned upload preset
 
