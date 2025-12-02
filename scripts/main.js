@@ -37,6 +37,8 @@ if (typeof firebase !== "undefined" && firebase) {
     auth = firebase.auth()
     
     // Enable persistent login: user stays logged in across browser sessions
+            const alreadyAcknowledged = Boolean(currentData.linkedAcknowledged)
+            const clientAck = Boolean(localStorage.getItem('linkedToastShown'))
     // Using LOCAL persistence means login persists even after browser close
     firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
       .catch((error) => {
@@ -86,7 +88,16 @@ function getBasePath() {
     const basePath = '/' + parts.join('/')
     return basePath
   }
-  
+            // Only show the toast the very first time on this device
+            if (!alreadyAcknowledged && !clientAck) {
+              showNotification('You have been linked to this family as a parent!', 'success')
+              try { localStorage.setItem('linkedToastShown', 'true') } catch(e) {}
+            }
+            
+            // Persist an acknowledgment flag on the user to suppress toasts afterwards
+            try {
+              await db.collection('users').doc(user.uid).update({ linkedAcknowledged: true })
+            } catch(e) { /* ignore non-critical */ }
   return ''
 }
 
@@ -2074,9 +2085,24 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
       } else if (currentPage === "parent-dashboard.html") {
-        // Hide all sections immediately to prevent flashing
-        hideAllSections()
-        
+        // Restore last viewed section from localStorage BEFORE loading sections to avoid flash
+        try {
+          hideAllSections()
+          const lastSection = localStorage.getItem('lastSection')
+          if (lastSection) {
+            navigateToSection(lastSection)
+          } else {
+            const approvalsSection = document.getElementById("approvals-section")
+            if (approvalsSection) approvalsSection.style.display = "block"
+          }
+        } catch (e) {
+          console.debug('[TaskQuest] Failed to restore last section:', e)
+          hideAllSections()
+          const approvalsSection = document.getElementById("approvals-section")
+          if (approvalsSection) approvalsSection.style.display = "block"
+        }
+
+        // Now load data and attach listeners without changing section visibility
         loadPendingApprovals()
         loadOngoingTasks()
         loadChildren()
@@ -2087,23 +2113,6 @@ document.addEventListener("DOMContentLoaded", () => {
         // Keep ongoing tasks in sync (auto-refresh when status changes)
         setupOngoingTasksListener()
         displayFamilyCode()
-        
-        // Restore last viewed section from localStorage, or show default
-        try {
-          const lastSection = localStorage.getItem('lastSection')
-          if (lastSection) {
-            // Restore saved tab immediately
-            navigateToSection(lastSection)
-          } else {
-            // No saved tab, show default (approvals)
-            const approvalsSection = document.getElementById("approvals-section")
-            if (approvalsSection) approvalsSection.style.display = "block"
-          }
-        } catch (e) {
-          console.debug('[TaskQuest] Failed to restore last section:', e)
-          const approvalsSection = document.getElementById("approvals-section")
-          if (approvalsSection) approvalsSection.style.display = "block"
-        }
         try {
           // Attach family requests listener for real-time updates
           if (window.familyRequestsUnsubscribe) {
