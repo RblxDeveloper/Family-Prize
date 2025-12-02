@@ -4302,6 +4302,20 @@ async function setFamilyCodeForChild() {
       return
     }
 
+    // Guard: if child is already linked to a family, block sending request
+    try {
+      const myDoc = await db.collection('users').doc(user.uid).get()
+      if (myDoc.exists) {
+        const myData = myDoc.data() || {}
+        if (myData.familyCode) {
+          showNotification("You are already in a family. Unlink first to send a new request.", "error")
+          return
+        }
+      }
+    } catch (e) {
+      console.warn('[TaskQuest] Could not verify child link state before request:', e)
+    }
+
     // Do NOT attempt to read the users collection here — rules can block that.
     // Instead create a familyRequests doc with the provided code; parents will
     // filter by familyCode to find pending requests and approve/decline them.
@@ -5417,6 +5431,30 @@ async function approveFamilyRequest(requestId, requesterId, familyCode, roleRequ
   try {
     console.log('[TaskQuest] ===== APPROVAL PROCESS STARTED =====')
     console.log('[TaskQuest] Request details:', { requestId, requesterId, familyCode, roleRequested })
+
+    // Guard: prevent approving if requester (child/parent) is already linked to another family
+    try {
+      const requesterDoc = await db.collection('users').doc(requesterId).get()
+      if (requesterDoc.exists) {
+        const rdata = requesterDoc.data() || {}
+        const isChildRequester = (roleRequested !== 'parent')
+        if (isChildRequester && rdata.familyCode && rdata.familyCode !== familyCode) {
+          console.warn('[TaskQuest] Approval blocked: child already linked to another family:', rdata.familyCode)
+          showNotification('This child is already linked to another family. Ask them to unlink first.', 'error')
+          // Optionally mark request declined instead of approved
+          await db.collection('familyRequests').doc(requestId).update({ status: 'declined', respondedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
+          return
+        }
+        if (!isChildRequester && rdata.familyCode && rdata.familyCode !== familyCode) {
+          console.warn('[TaskQuest] Approval blocked: parent requester already linked to another family:', rdata.familyCode)
+          showNotification('Requester is already linked to a different family.', 'error')
+          await db.collection('familyRequests').doc(requestId).update({ status: 'declined', respondedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{})
+          return
+        }
+      }
+    } catch (guardErr) {
+      console.warn('[TaskQuest] approveFamilyRequest guard check failed:', guardErr)
+    }
     
     // Mark the request as approved - the requester will be auto-linked via real-time listener
     await db.collection('familyRequests').doc(requestId).update({
