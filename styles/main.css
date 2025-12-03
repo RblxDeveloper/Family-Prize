@@ -2,6 +2,12 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 :root {
@@ -2080,31 +2086,21 @@ body::-webkit-scrollbar {
   animation: slideUp 0.3s ease;
 }
 
-/* Thin scrollbar with transparent background */
+/* Hide all scrollbars completely */
 /* Firefox */
 html, body, .modal-content, .dashboard-section {
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+  scrollbar-width: none;
 }
 
 /* WebKit (Chrome, Safari, Opera) */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.5);
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.modal-content::-webkit-scrollbar,
+.dashboard-section::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* Modal scrollbars */
